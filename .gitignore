@@ -1,0 +1,35 @@
+# === 기존 + 수정 ===
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar  # ← 이 줄 필수 (wrapper jar는 커밋되어야 함)
+
+# === 환경변수 ===
+.env
+.env.local
+*.env.local
+
+# === IDE ===
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.vscode/
+.project
+.classpath
+.settings/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Java/Spring ===
+*.class
+*.log
+logs/
+hs_err_pid*      # JVM crash dump
+replay_pid*
+
+# === Spring Boot 로컬 설정 (secrets 방지) ===
+application-local.yml
+application-local.properties
