@@ -52,6 +52,9 @@ public class Member {
     @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private CreatorProfile creatorProfile;
 
+    @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private CompanyProfile companyProfile;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

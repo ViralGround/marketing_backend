@@ -6,6 +6,7 @@ import com.viralground.backend.dto.admin.MemberDetailResponse;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.service.AdminService;
+import com.viralground.backend.service.EscrowService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class AdminController {
 
     private final AdminService adminService;
+    private final EscrowService escrowService;
 
     // ── 회원 관리 ──────────────────────────────────
 
@@ -94,5 +96,24 @@ public class AdminController {
                                                           @RequestBody Map<String, Object> body) {
         adminService.updateApplication(id, body);
         return ResponseEntity.ok(Map.of("message", "지원 상태가 변경되었습니다."));
+    }
+
+    // ── 예치금 관리 ──────────────────────────────────
+
+    @GetMapping("/escrow/pending")
+    ResponseEntity<Map<String, Object>> getPendingEscrow() {
+        return ResponseEntity.ok(Map.of("campaigns", adminService.getPendingEscrowCampaigns()));
+    }
+
+    @PostMapping("/campaigns/{id}/escrow/confirm")
+    ResponseEntity<Map<String, String>> confirmEscrow(@PathVariable Integer id) {
+        escrowService.confirmDeposit(id);
+        return ResponseEntity.ok(Map.of("message", "예치금 입금이 확인되었습니다."));
+    }
+
+    @PostMapping("/campaigns/{id}/escrow/reject")
+    ResponseEntity<Map<String, String>> rejectEscrow(@PathVariable Integer id) {
+        escrowService.rejectDeposit(id);
+        return ResponseEntity.ok(Map.of("message", "입금 확인이 반려되었습니다."));
     }
 }

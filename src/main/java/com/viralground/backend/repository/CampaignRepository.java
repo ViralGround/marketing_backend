@@ -2,6 +2,7 @@ package com.viralground.backend.repository;
 
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
+import com.viralground.backend.entity.EscrowStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -23,4 +24,8 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
             ORDER BY c.createdAt DESC
             """)
     List<Campaign> findAllByStatus(CampaignStatus status);
+
+    List<Campaign> findByCreatedByIdOrderByCreatedAtDesc(Integer createdById);
+
+    List<Campaign> findByEscrowStatusOrderByDepositRequestedAtAsc(EscrowStatus escrowStatus);
 }

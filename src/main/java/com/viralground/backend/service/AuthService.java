@@ -1,5 +1,6 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.dto.auth.CompanySignupRequest;
 import com.viralground.backend.dto.auth.LoginRequest;
 import com.viralground.backend.dto.auth.SignupRequest;
 import com.viralground.backend.dto.auth.TokenResponse;
@@ -22,6 +23,7 @@ public class AuthService {
 
     private final MemberRepository memberRepository;
     private final CreatorProfileRepository creatorProfileRepository;
+    private final CompanyProfileRepository companyProfileRepository;
     private final EmailVerificationRepository emailVerificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -62,6 +64,43 @@ public class AuthService {
 
         emailService.sendEmailVerification(member.getEmail(), member.getName(), token);
         emailService.notifyAdminsOfNewCreator(member.getName(), member.getEmail());
+    }
+
+    @Transactional
+    public void signupCompany(CompanySignupRequest req) {
+        if (memberRepository.existsByEmail(req.getEmail())) {
+            throw new AppException(ErrorCode.DUPLICATE_EMAIL);
+        }
+
+        Member member = memberRepository.save(Member.builder()
+                .email(req.getEmail())
+                .password(passwordEncoder.encode(req.getPassword()))
+                .name(req.getName())
+                .role(Role.COMPANY)
+                .status(MemberStatus.APPROVED)
+                .emailVerified(false)
+                .build());
+
+        companyProfileRepository.save(CompanyProfile.builder()
+                .memberId(member.getId())
+                .companyName(req.getCompanyName())
+                .businessNumber(req.getBusinessNumber())
+                .representativeName(req.getRepresentativeName())
+                .contactName(req.getContactName())
+                .contactPhone(req.getContactPhone())
+                .address(req.getAddress())
+                .homepage(req.getHomepage())
+                .industry(req.getIndustry())
+                .build());
+
+        String token = generateToken();
+        emailVerificationRepository.save(EmailVerification.builder()
+                .memberId(member.getId())
+                .token(token)
+                .expiresAt(LocalDateTime.now().plusHours(24))
+                .build());
+
+        emailService.sendEmailVerification(member.getEmail(), member.getName(), token);
     }
 
     public TokenResponse login(LoginRequest req) {

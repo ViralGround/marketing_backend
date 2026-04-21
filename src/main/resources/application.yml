@@ -17,6 +17,17 @@ spring:
 server:
   port: ${PORT:8080}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
 jwt:
   secret: ${JWT_SECRET}
   access-expiry: 3600

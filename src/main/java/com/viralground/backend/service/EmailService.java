@@ -69,6 +69,21 @@ public class EmailService {
     }
 
     @Async
+    public void notifyAdminsOfEscrowDepositRequest(String campaignTitle, String companyName, Integer totalBudget) {
+        if (adminEmails.isEmpty()) return;
+        String html = "<p>캠페인 <strong>%s</strong>의 예치금 입금 확인이 필요합니다.</p><p>기업: %s<br>금액: %,d원</p>"
+                .formatted(campaignTitle, companyName, totalBudget);
+        adminEmails.forEach(admin -> sendEmail(admin, "[Viral Ground] 예치금 입금 확인 요청", html));
+    }
+
+    @Async
+    public void notifyCompanyOfEscrowFunded(String to, String companyName, String campaignTitle) {
+        String html = "<p>안녕하세요, %s님!</p><p>캠페인 <strong>%s</strong>의 예치금 입금이 확인되었습니다. 캠페인이 모집 상태로 전환되었어요.</p>"
+                .formatted(companyName, campaignTitle);
+        sendEmail(to, "[Viral Ground] 예치금 입금 확인 완료", html);
+    }
+
+    @Async
     public void notifyAdminsOfNewApplication(String campaignTitle, String creatorName) {
         if (adminEmails.isEmpty()) return;
         String html = "<p>캠페인 <strong>%s</strong>에 %s 크레이터가 지원했습니다.</p>".formatted(campaignTitle, creatorName);

@@ -28,6 +28,8 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
 
     long countByCreatorIdAndStatus(Integer creatorId, ApplicationStatus status);
 
+    long countByCampaignId(Integer campaignId);
+
     @Query("SELECT COALESCE(SUM(a.rewardPaidAmount), 0) FROM CampaignApplication a WHERE a.creatorId = :creatorId AND a.status = 'SETTLED'")
     Long sumRewardByCreatorId(Integer creatorId);
 }

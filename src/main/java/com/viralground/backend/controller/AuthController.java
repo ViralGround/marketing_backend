@@ -1,5 +1,6 @@
 package com.viralground.backend.controller;
 
+import com.viralground.backend.dto.auth.CompanySignupRequest;
 import com.viralground.backend.dto.auth.LoginRequest;
 import com.viralground.backend.dto.auth.SignupRequest;
 import com.viralground.backend.dto.auth.TokenResponse;
@@ -24,6 +25,13 @@ public class AuthController {
         authService.signup(req);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("message", "가입 신청이 완료되었습니다. 이메일을 확인해주세요."));
+    }
+
+    @PostMapping("/signup/company")
+    public ResponseEntity<Map<String, String>> signupCompany(@Valid @RequestBody CompanySignupRequest req) {
+        authService.signupCompany(req);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(Map.of("message", "가입이 완료되었습니다. 이메일 인증 후 로그인해주세요."));
     }
 
     @PostMapping("/login")

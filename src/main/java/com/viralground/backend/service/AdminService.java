@@ -21,9 +21,11 @@ public class AdminService {
 
     private final MemberRepository memberRepository;
     private final CreatorProfileRepository profileRepository;
+    private final CompanyProfileRepository companyProfileRepository;
     private final CampaignRepository campaignRepository;
     private final CampaignApplicationRepository applicationRepository;
     private final EmailService emailService;
+    private final EscrowService escrowService;
 
     // ── 회원 관리 ──────────────────────────────────
 
@@ -145,6 +147,27 @@ public class AdminService {
         campaignRepository.deleteById(id);
     }
 
+    public List<Map<String, Object>> getPendingEscrowCampaigns() {
+        return campaignRepository.findByEscrowStatusOrderByDepositRequestedAtAsc(EscrowStatus.DEPOSIT_CONFIRMING).stream()
+                .map(c -> {
+                    String companyName = companyProfileRepository.findByMemberId(c.getCreatedById())
+                            .map(p -> p.getCompanyName())
+                            .orElse("-");
+                    Map<String, Object> m = new java.util.HashMap<>();
+                    m.put("id", c.getId());
+                    m.put("title", c.getTitle());
+                    m.put("brandName", c.getBrandName());
+                    m.put("companyName", companyName);
+                    m.put("totalBudget", c.getTotalBudget());
+                    m.put("rewardAmount", c.getRewardAmount());
+                    m.put("maxParticipants", c.getMaxParticipants());
+                    m.put("depositRequestedAt", c.getDepositRequestedAt());
+                    m.put("createdAt", c.getCreatedAt());
+                    return m;
+                })
+                .toList();
+    }
+
     // ── 지원 관리 ──────────────────────────────────
 
     @Transactional
@@ -161,6 +184,16 @@ public class AdminService {
         }
         if (newStatus == ApplicationStatus.SETTLED) {
             app.setSettledAt(LocalDateTime.now());
+            Campaign campaign = campaignRepository.findById(app.getCampaignId())
+                    .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+            Integer payout = app.getRewardPaidAmount() != null ? app.getRewardPaidAmount() : campaign.getRewardAmount();
+            if (campaign.getEscrowStatus() == EscrowStatus.FUNDED
+                    || campaign.getEscrowStatus() == EscrowStatus.PARTIALLY_RELEASED) {
+                escrowService.release(campaign.getId(), app.getId(), payout);
+            }
+            if (app.getRewardPaidAmount() == null) {
+                app.setRewardPaidAmount(payout);
+            }
         }
         applicationRepository.save(app);
 

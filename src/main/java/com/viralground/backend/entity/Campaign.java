@@ -30,6 +30,24 @@ public class Campaign {
     @Column(name = "reward_amount", nullable = false)
     private Integer rewardAmount;
 
+    @Column(name = "total_budget", nullable = false)
+    @Builder.Default
+    private Integer totalBudget = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "escrow_status", nullable = false)
+    @Builder.Default
+    private EscrowStatus escrowStatus = EscrowStatus.NONE;
+
+    @Column(name = "deposit_requested_at")
+    private LocalDateTime depositRequestedAt;
+
+    @Column(name = "funded_at")
+    private LocalDateTime fundedAt;
+
+    @Column(name = "refunded_at")
+    private LocalDateTime refundedAt;
+
     @Column(name = "thumbnail_url")
     private String thumbnailUrl;
 
@@ -44,7 +62,7 @@ public class Campaign {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private CampaignStatus status = CampaignStatus.OPEN;
+    private CampaignStatus status = CampaignStatus.DRAFT;
 
     @Column(name = "created_by_id", nullable = false)
     private Integer createdById;

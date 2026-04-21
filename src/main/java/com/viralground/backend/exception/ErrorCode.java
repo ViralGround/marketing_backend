@@ -21,7 +21,10 @@ public enum ErrorCode {
     APPLICATION_NOT_FOUND("APPLICATION_NOT_FOUND", "지원 내역을 찾을 수 없습니다", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("ALREADY_APPLIED", "이미 지원한 캠페인입니다", HttpStatus.CONFLICT),
     FORBIDDEN("FORBIDDEN", "권한이 없습니다", HttpStatus.FORBIDDEN),
-    SELF_DELETE_FORBIDDEN("SELF_DELETE_FORBIDDEN", "자기 자신은 삭제할 수 없습니다", HttpStatus.FORBIDDEN);
+    SELF_DELETE_FORBIDDEN("SELF_DELETE_FORBIDDEN", "자기 자신은 삭제할 수 없습니다", HttpStatus.FORBIDDEN),
+    INVALID_ESCROW_STATE("INVALID_ESCROW_STATE", "현재 예치금 상태에서 허용되지 않는 작업입니다", HttpStatus.BAD_REQUEST),
+    INSUFFICIENT_ESCROW_BALANCE("INSUFFICIENT_ESCROW_BALANCE", "예치금 잔액이 부족합니다", HttpStatus.BAD_REQUEST),
+    INVALID_CAMPAIGN_INPUT("INVALID_CAMPAIGN_INPUT", "캠페인 입력값이 올바르지 않습니다", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;
