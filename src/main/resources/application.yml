@@ -1,0 +1,34 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+    open-in-view: false
+
+server:
+  port: ${PORT:8080}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-expiry: 3600
+  refresh-expiry: 604800
+
+resend:
+  api-key: ${RESEND_API_KEY:}
+  from: ${EMAIL_FROM:onboarding@resend.dev}
+
+app:
+  url: ${APP_URL:http://localhost:3000}
+  admin-emails: ${ADMIN_NOTIFICATION_EMAILS:}
+
+cors:
+  allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
