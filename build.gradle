@@ -35,11 +35,15 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
-	implementation 'io.sentry:sentry-spring-boot-starter-jakarta:8.7.0'
-	implementation 'io.sentry:sentry-logback:8.7.0'
+	implementation 'io.sentry:sentry-spring-boot-starter-jakarta:8.11.1'
+	implementation 'io.sentry:sentry-logback:8.11.1'
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+bootRun {
+	systemProperty 'dotenv.directory', project.projectDir.absolutePath
 }
