@@ -34,10 +34,10 @@ cors:
   allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
 
 sentry:
-  dsn: ${https://41aa852c8ca45e1a7635c67a3b35849d@o4511213185204224.ingest.us.sentry.io/4511259081834496}
-  environment: ${SENTRY_ENV:production}
-  traces-sample-rate: 0.1    # 10% 트랜잭션만 샘플링 (무료 한도 절약)
-  send-default-pii: false    # 개인정보(IP, 이메일) 전송 금지
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENV:local}
+  traces-sample-rate: 0.1
+  send-default-pii: false
   exception-resolver-order: -2147483647
   logging:
-    minimum-event-level: error  # ERROR 로그만 Sentry 전송
+    minimum-event-level: error
