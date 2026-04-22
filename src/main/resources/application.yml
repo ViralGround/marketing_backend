@@ -16,6 +16,9 @@ spring:
 
 server:
   port: ${PORT:8080}
+  # Railway/리버스 프록시 뒤에서만 X-Forwarded-* 헤더를 신뢰해 request.getRemoteAddr()가 실제 클라이언트 IP를 반환.
+  # 직접 노출 환경에서는 공격자가 헤더를 위조할 수 있으므로 FORWARD_HEADERS_STRATEGY=none 으로 끌 것.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}
 
 management:
   endpoints:

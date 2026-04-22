@@ -3,8 +3,10 @@ package com.viralground.backend.controller;
 import com.viralground.backend.config.AuthUser;
 import com.viralground.backend.dto.campaign.ApplicationResponse;
 import com.viralground.backend.dto.campaign.CampaignResponse;
+import com.viralground.backend.dto.profile.UpdateProfileRequest;
 import com.viralground.backend.service.CampaignService;
 import com.viralground.backend.service.ProfileService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -83,9 +85,9 @@ public class CampaignController {
 
     @PostMapping("/profile")
     public ResponseEntity<Map<String, String>> updateProfile(
-            @RequestBody Map<String, Object> body,
+            @Valid @RequestBody UpdateProfileRequest req,
             @AuthenticationPrincipal AuthUser authUser) {
-        profileService.updateProfile(authUser.getId(), body);
+        profileService.updateProfile(authUser.getId(), req);
         return ResponseEntity.ok(Map.of("message", "프로필이 저장되었습니다."));
     }
 }

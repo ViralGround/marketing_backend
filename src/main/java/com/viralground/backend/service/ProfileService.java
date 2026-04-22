@@ -1,7 +1,7 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.dto.profile.UpdateProfileRequest;
 import com.viralground.backend.entity.CreatorProfile;
-import com.viralground.backend.entity.EditingSkill;
 import com.viralground.backend.repository.CreatorProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,25 +38,15 @@ public class ProfileService {
     }
 
     @Transactional
-    public void updateProfile(Integer memberId, Map<String, Object> body) {
+    public void updateProfile(Integer memberId, UpdateProfileRequest req) {
         CreatorProfile profile = creatorProfileRepository.findByMemberId(memberId)
                 .orElse(CreatorProfile.builder().memberId(memberId).build());
 
-        if (body.containsKey("canEdit")) {
-            profile.setCanEdit(Boolean.parseBoolean(body.get("canEdit").toString()));
-        }
-        if (body.containsKey("editingSkill") && body.get("editingSkill") != null) {
-            profile.setEditingSkill(EditingSkill.valueOf(body.get("editingSkill").toString()));
-        }
-        if (body.containsKey("faceExposure")) {
-            profile.setFaceExposure(Boolean.parseBoolean(body.get("faceExposure").toString()));
-        }
-        if (body.containsKey("profileImage")) {
-            profile.setProfileImage(body.get("profileImage") != null ? body.get("profileImage").toString() : null);
-        }
-        if (body.containsKey("instagramId")) {
-            profile.setInstagramId(body.get("instagramId") != null ? body.get("instagramId").toString() : null);
-        }
+        profile.setCanEdit(req.getCanEdit());
+        profile.setEditingSkill(req.getEditingSkill());
+        profile.setFaceExposure(req.getFaceExposure());
+        profile.setProfileImage(req.getProfileImage());
+        profile.setInstagramId(req.getInstagramId());
 
         creatorProfileRepository.save(profile);
     }

@@ -77,10 +77,9 @@ public class AuthController {
     }
 
     private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
+        // server.forward-headers-strategy=native 설정에 의해 신뢰된 프록시 뒤에서는
+        // Tomcat이 X-Forwarded-For를 해석해 getRemoteAddr()가 실제 클라이언트 IP를 반환한다.
+        // 헤더를 직접 읽으면 프록시가 없는 환경에서 공격자가 위조한 값을 신뢰하게 되므로 사용 금지.
         return request.getRemoteAddr();
     }
 

@@ -2,10 +2,12 @@ package com.viralground.backend.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.util.NoSuchElementException;
 import java.util.Map;
 
 @Slf4j
@@ -26,6 +28,22 @@ public class GlobalExceptionHandler {
                 .map(fe -> fe.getDefaultMessage())
                 .orElse("입력값을 확인해주세요");
         return ResponseEntity.badRequest().body(Map.of("message", message));
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class, NumberFormatException.class})
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException e) {
+        log.debug("잘못된 입력값: {}", e.getMessage());
+        return ResponseEntity.badRequest().body(Map.of("message", "입력값을 확인해주세요"));
+    }
+
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<Map<String, String>> handleNotFound(NoSuchElementException e) {
+        return ResponseEntity.status(404).body(Map.of("message", "요청한 리소스를 찾을 수 없습니다"));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e) {
+        return ResponseEntity.status(403).body(Map.of("message", "권한이 없습니다"));
     }
 
     @ExceptionHandler(Exception.class)

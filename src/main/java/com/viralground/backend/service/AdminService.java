@@ -2,6 +2,8 @@ package com.viralground.backend.service;
 
 import com.viralground.backend.dto.admin.CampaignDetailResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
+import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
+import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
 import com.viralground.backend.entity.*;
 import com.viralground.backend.exception.AppException;
@@ -87,10 +89,9 @@ public class AdminService {
     }
 
     @Transactional
-    public void updateMemberStatus(Integer id, String statusStr) {
+    public void updateMemberStatus(Integer id, MemberStatus newStatus) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-        MemberStatus newStatus = MemberStatus.valueOf(statusStr);
         member.setStatus(newStatus);
         memberRepository.save(member);
 
@@ -154,17 +155,17 @@ public class AdminService {
     }
 
     @Transactional
-    public void updateCampaign(Integer id, Map<String, Object> body) {
+    public void updateCampaign(Integer id, UpdateCampaignAdminRequest req) {
         Campaign c = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-        if (body.containsKey("title")) c.setTitle(body.get("title").toString());
-        if (body.containsKey("description")) c.setDescription(body.get("description").toString());
-        if (body.containsKey("brandName")) c.setBrandName(body.get("brandName").toString());
-        if (body.containsKey("rewardAmount")) c.setRewardAmount(Integer.parseInt(body.get("rewardAmount").toString()));
-        if (body.containsKey("maxParticipants")) c.setMaxParticipants(Integer.parseInt(body.get("maxParticipants").toString()));
-        if (body.containsKey("thumbnailUrl")) c.setThumbnailUrl(body.get("thumbnailUrl").toString());
-        if (body.containsKey("requirements")) c.setRequirements(body.get("requirements").toString());
-        if (body.containsKey("status")) c.setStatus(CampaignStatus.valueOf(body.get("status").toString()));
+        if (req.getTitle() != null) c.setTitle(req.getTitle());
+        if (req.getDescription() != null) c.setDescription(req.getDescription());
+        if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
+        if (req.getRewardAmount() != null) c.setRewardAmount(req.getRewardAmount());
+        if (req.getMaxParticipants() != null) c.setMaxParticipants(req.getMaxParticipants());
+        if (req.getThumbnailUrl() != null) c.setThumbnailUrl(req.getThumbnailUrl());
+        if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
+        if (req.getStatus() != null) c.setStatus(req.getStatus());
         campaignRepository.save(c);
     }
 
@@ -198,16 +199,16 @@ public class AdminService {
     // ── 지원 관리 ──────────────────────────────────
 
     @Transactional
-    public void updateApplication(Integer id, Map<String, Object> body) {
+    public void updateApplication(Integer id, UpdateApplicationStatusRequest req) {
         CampaignApplication app = applicationRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
 
-        ApplicationStatus newStatus = ApplicationStatus.valueOf(body.get("status").toString());
+        ApplicationStatus newStatus = req.getStatus();
         app.setStatus(newStatus);
         app.setReviewedAt(LocalDateTime.now());
 
-        if (body.containsKey("rewardPaidAmount") && body.get("rewardPaidAmount") != null) {
-            app.setRewardPaidAmount(Integer.parseInt(body.get("rewardPaidAmount").toString()));
+        if (req.getRewardPaidAmount() != null) {
+            app.setRewardPaidAmount(req.getRewardPaidAmount());
         }
         if (newStatus == ApplicationStatus.SETTLED) {
             app.setSettledAt(LocalDateTime.now());

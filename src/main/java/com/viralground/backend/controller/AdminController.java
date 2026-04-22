@@ -3,6 +3,9 @@ package com.viralground.backend.controller;
 import com.viralground.backend.config.AuthUser;
 import com.viralground.backend.dto.admin.CampaignDetailResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
+import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
+import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
+import com.viralground.backend.dto.admin.UpdateMemberStatusRequest;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.service.AdminService;
@@ -48,8 +51,8 @@ public class AdminController {
 
     @PatchMapping("/members/{id}/status")
     ResponseEntity<Map<String, String>> updateMemberStatus(@PathVariable Integer id,
-                                                           @RequestBody Map<String, String> body) {
-        adminService.updateMemberStatus(id, body.get("status"));
+                                                           @Valid @RequestBody UpdateMemberStatusRequest req) {
+        adminService.updateMemberStatus(id, req.getStatus());
         return ResponseEntity.ok(Map.of("message", "상태가 변경되었습니다."));
     }
 
@@ -78,8 +81,8 @@ public class AdminController {
 
     @PutMapping("/campaigns/{id}")
     ResponseEntity<Map<String, String>> updateCampaign(@PathVariable Integer id,
-                                                       @RequestBody Map<String, Object> body) {
-        adminService.updateCampaign(id, body);
+                                                       @Valid @RequestBody UpdateCampaignAdminRequest req) {
+        adminService.updateCampaign(id, req);
         return ResponseEntity.ok(Map.of("message", "캠페인이 수정되었습니다."));
     }
 
@@ -93,8 +96,8 @@ public class AdminController {
 
     @PatchMapping("/applications/{id}")
     ResponseEntity<Map<String, String>> updateApplication(@PathVariable Integer id,
-                                                          @RequestBody Map<String, Object> body) {
-        adminService.updateApplication(id, body);
+                                                          @Valid @RequestBody UpdateApplicationStatusRequest req) {
+        adminService.updateApplication(id, req);
         return ResponseEntity.ok(Map.of("message", "지원 상태가 변경되었습니다."));
     }
 
