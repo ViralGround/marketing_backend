@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 @RestController
@@ -37,7 +38,7 @@ public class AuthController {
         LocalDateTime expiresAt = emailVerificationService.requestCode(req.getEmail());
         return ResponseEntity.ok(Map.of(
                 "message", "인증 코드를 발송했습니다",
-                "expiresAt", expiresAt.toString()
+                "expiresAt", expiresAt.atZone(ZoneOffset.UTC).toOffsetDateTime().toString()
         ));
     }
 

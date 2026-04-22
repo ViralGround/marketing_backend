@@ -30,7 +30,7 @@ public class RateLimitService {
 
     public void consumeRequestCodeByEmail(String email) {
         consume("reqcode:email:" + email, () -> Bucket.builder()
-                .addLimit(Bandwidth.builder().capacity(1).refillGreedy(1, Duration.ofMinutes(1)).build())
+                .addLimit(Bandwidth.builder().capacity(3).refillGreedy(3, Duration.ofMinutes(1)).build())
                 .build());
     }
 
