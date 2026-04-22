@@ -60,4 +60,26 @@ public class JwtService {
             return null;
         }
     }
+
+    private static final long EMAIL_VERIFIED_EXPIRY_SECONDS = 15 * 60;
+    private static final String EMAIL_VERIFIED_PURPOSE = "signup-verified";
+
+    public String generateEmailVerifiedToken(String email) {
+        return Jwts.builder()
+                .claim("email", email)
+                .claim("purpose", EMAIL_VERIFIED_PURPOSE)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + EMAIL_VERIFIED_EXPIRY_SECONDS * 1000))
+                .signWith(key)
+                .compact();
+    }
+
+    public boolean verifyEmailVerifiedToken(String token, String expectedEmail) {
+        Claims claims = parseToken(token);
+        if (claims == null) return false;
+        Object purpose = claims.get("purpose");
+        if (!EMAIL_VERIFIED_PURPOSE.equals(purpose)) return false;
+        Object email = claims.get("email");
+        return expectedEmail != null && expectedEmail.equals(email);
+    }
 }

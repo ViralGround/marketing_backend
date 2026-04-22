@@ -1,16 +1,20 @@
 package com.viralground.backend.controller;
 
 import com.viralground.backend.dto.auth.CompanySignupRequest;
+import com.viralground.backend.dto.auth.EmailCodeRequest;
+import com.viralground.backend.dto.auth.EmailCodeVerifyRequest;
 import com.viralground.backend.dto.auth.LoginRequest;
 import com.viralground.backend.dto.auth.SignupRequest;
 import com.viralground.backend.dto.auth.TokenResponse;
 import com.viralground.backend.service.AuthService;
+import com.viralground.backend.service.EmailVerificationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestController
@@ -19,6 +23,25 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final EmailVerificationService emailVerificationService;
+
+    @PostMapping("/email/request-code")
+    public ResponseEntity<Map<String, Object>> requestEmailCode(@Valid @RequestBody EmailCodeRequest req) {
+        LocalDateTime expiresAt = emailVerificationService.requestCode(req.getEmail());
+        return ResponseEntity.ok(Map.of(
+                "message", "인증 코드를 발송했습니다",
+                "expiresAt", expiresAt.toString()
+        ));
+    }
+
+    @PostMapping("/email/verify-code")
+    public ResponseEntity<Map<String, String>> verifyEmailCode(@Valid @RequestBody EmailCodeVerifyRequest req) {
+        String verifiedToken = emailVerificationService.verifyCode(req.getEmail(), req.getCode());
+        return ResponseEntity.ok(Map.of(
+                "message", "이메일 인증이 완료되었습니다",
+                "verifiedToken", verifiedToken
+        ));
+    }
 
     @PostMapping("/signup")
     public ResponseEntity<Map<String, String>> signup(@Valid @RequestBody SignupRequest req) {
@@ -37,17 +60,5 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest req) {
         return ResponseEntity.ok(authService.login(req));
-    }
-
-    @GetMapping("/verify-email")
-    public ResponseEntity<Map<String, String>> verifyEmail(@RequestParam(required = false) String token) {
-        authService.verifyEmail(token);
-        return ResponseEntity.ok(Map.of("message", "이메일 인증이 완료되었습니다."));
-    }
-
-    @PostMapping("/resend-verification")
-    public ResponseEntity<Map<String, String>> resendVerification(@RequestBody Map<String, String> body) {
-        authService.resendVerification(body.get("email"));
-        return ResponseEntity.ok(Map.of("message", "인증 메일을 발송했습니다."));
     }
 }

@@ -18,16 +18,13 @@ public class EmailService {
 
     private final RestClient restClient;
     private final String from;
-    private final String appUrl;
     private final List<String> adminEmails;
 
     public EmailService(
             @Value("${resend.api-key:}") String apiKey,
             @Value("${resend.from}") String from,
-            @Value("${app.url}") String appUrl,
             @Value("${app.admin-emails:}") String adminEmailsRaw) {
         this.from = from;
-        this.appUrl = appUrl;
         this.adminEmails = Arrays.stream(adminEmailsRaw.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -41,15 +38,19 @@ public class EmailService {
     }
 
     @Async
-    public void sendEmailVerification(String to, String name, String token) {
-        String link = appUrl + "/verify-email/confirm?token=" + token;
+    public void sendVerificationCode(String to, String code) {
         String html = """
-                <p>안녕하세요, %s님!</p>
-                <p>아래 버튼을 클릭해 이메일을 인증해주세요. 링크는 <strong>24시간</strong> 동안 유효합니다.</p>
-                <a href="%s" style="display:inline-block;padding:12px 24px;background:#111;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">이메일 인증하기</a>
-                <p>버튼이 작동하지 않으면 아래 링크를 복사해 브라우저에 붙여넣어 주세요:<br>%s</p>
-                """.formatted(name, link, link);
-        sendEmail(to, "Viral Ground 이메일 인증", html);
+                <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111;">
+                  <h2 style="margin:0 0 16px;">이메일 인증 코드</h2>
+                  <p style="color:#444;margin:0 0 16px;">아래 6자리 인증 코드를 가입 화면에 입력해주세요.</p>
+                  <div style="background:#f5f5f5;border-radius:8px;padding:20px;text-align:center;margin:20px 0;">
+                    <span style="font-size:32px;font-weight:700;letter-spacing:8px;color:#111;font-family:monospace;">%s</span>
+                  </div>
+                  <p style="color:#888;font-size:13px;margin:16px 0 0;">이 코드는 <strong>5분</strong> 동안 유효합니다.</p>
+                  <p style="color:#888;font-size:13px;margin:8px 0 0;">본인이 요청하지 않았다면 이 이메일을 무시하세요.</p>
+                </div>
+                """.formatted(code);
+        sendEmail(to, "[Viral Ground] 이메일 인증 코드: " + code, html);
     }
 
     @Async

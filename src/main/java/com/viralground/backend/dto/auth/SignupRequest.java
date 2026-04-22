@@ -23,6 +23,9 @@ public class SignupRequest {
     @NotBlank
     private String name;
 
+    @NotBlank
+    private String verifiedToken;
+
     @NotNull
     private Gender gender;
 

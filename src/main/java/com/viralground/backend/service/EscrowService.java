@@ -139,6 +139,46 @@ public class EscrowService {
         campaignRepository.save(campaign);
     }
 
+    /**
+     * 기업이 캠페인을 취소하고 예치금을 환불한다. FUNDED 상태에서 남은 예치금 전액을 REFUND로 기록.
+     */
+    @Transactional
+    public void refund(Integer campaignId) {
+        Campaign campaign = campaignRepository.findById(campaignId)
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+
+        EscrowStatus current = campaign.getEscrowStatus();
+        if (current != EscrowStatus.FUNDED && current != EscrowStatus.PARTIALLY_RELEASED) {
+            return;
+        }
+
+        int released = escrowTransactionRepository.findByCampaignIdOrderByCreatedAtDesc(campaignId)
+                .stream()
+                .filter(tx -> tx.getType() == EscrowTxType.RELEASE)
+                .mapToInt(EscrowTransaction::getAmount)
+                .sum();
+        int remaining = campaign.getTotalBudget() - released;
+        if (remaining <= 0) {
+            campaign.setEscrowStatus(EscrowStatus.REFUNDED);
+            campaign.setRefundedAt(LocalDateTime.now());
+            campaignRepository.save(campaign);
+            return;
+        }
+
+        PaymentGateway.RefundResult result = paymentGateway.refund(campaignId, remaining, "campaign cancelled");
+
+        escrowTransactionRepository.save(EscrowTransaction.builder()
+                .campaignId(campaignId)
+                .type(EscrowTxType.REFUND)
+                .amount(remaining)
+                .memo(result.providerTxId())
+                .build());
+
+        campaign.setEscrowStatus(EscrowStatus.REFUNDED);
+        campaign.setRefundedAt(LocalDateTime.now());
+        campaignRepository.save(campaign);
+    }
+
     private Campaign loadOwnedCampaign(Integer campaignId, Integer companyMemberId) {
         Campaign campaign = campaignRepository.findById(campaignId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));

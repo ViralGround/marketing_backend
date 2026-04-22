@@ -20,6 +20,9 @@ public class CompanySignupRequest {
     private String name;
 
     @NotBlank
+    private String verifiedToken;
+
+    @NotBlank
     private String companyName;
 
     @NotBlank
