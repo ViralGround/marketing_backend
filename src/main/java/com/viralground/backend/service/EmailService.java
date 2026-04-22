@@ -27,18 +27,28 @@ public class EmailService {
     private final RestClient restClient;
     private final String from;
     private final List<String> adminEmails;
+    private final boolean mockMode;
 
     public EmailService(
             @Value("${resend.api-key:}") String apiKey,
             @Value("${resend.from:}") String from,
-            @Value("${app.admin-emails:}") String adminEmailsRaw) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException(
-                    "RESEND_API_KEY 환경변수가 설정되지 않았습니다. 배포 환경(Railway) 또는 로컬 .env에 추가하세요.");
-        }
-        if (from == null || from.isBlank()) {
-            throw new IllegalStateException(
-                    "EMAIL_FROM(resend.from) 설정이 비어있습니다. 배포 환경 또는 .env에 추가하세요.");
+            @Value("${app.admin-emails:}") String adminEmailsRaw,
+            @Value("${email.mock:false}") boolean mockMode) {
+        this.mockMode = mockMode;
+        if (mockMode) {
+            log.warn("═══════════════════════════════════════════════════════════════");
+            log.warn("⚠️  EMAIL MOCK MODE ACTIVE — Resend 호출 스킵, 로그에 코드 출력");
+            log.warn("   프로덕션에서는 절대 활성화하지 마세요 (EMAIL_MOCK=false).");
+            log.warn("═══════════════════════════════════════════════════════════════");
+        } else {
+            if (apiKey == null || apiKey.isBlank()) {
+                throw new IllegalStateException(
+                        "RESEND_API_KEY 환경변수가 설정되지 않았습니다. 배포 환경(Railway) 또는 로컬 .env에 추가하세요. (개발/데모용이면 EMAIL_MOCK=true)");
+            }
+            if (from == null || from.isBlank()) {
+                throw new IllegalStateException(
+                        "EMAIL_FROM(resend.from) 설정이 비어있습니다. 배포 환경 또는 .env에 추가하세요.");
+            }
         }
         this.from = from;
         this.adminEmails = Arrays.stream(adminEmailsRaw.split(","))
@@ -58,6 +68,14 @@ public class EmailService {
     }
 
     public void sendVerificationCode(String to, String code) {
+        if (mockMode) {
+            log.warn("═══════════════════════════════════════════");
+            log.warn("[MOCK] 이메일 인증 코드 (Resend 스킵)");
+            log.warn("  수신자: {}", to);
+            log.warn("  코드  : {}", code);
+            log.warn("═══════════════════════════════════════════");
+            return;
+        }
         String html = """
                 <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111;">
                   <h2 style="margin:0 0 16px;">이메일 인증 코드</h2>
@@ -136,6 +154,10 @@ public class EmailService {
     }
 
     private void sendEmailInternal(String to, String subject, String html, boolean throwOnFailure) {
+        if (mockMode) {
+            log.info("[MOCK] 이메일 스킵: to={}, subject={}", to, subject);
+            return;
+        }
         try {
             ResponseEntity<String> response = restClient.post()
                     .uri("/emails")

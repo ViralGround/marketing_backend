@@ -37,6 +37,10 @@ resend:
   api-key: ${RESEND_API_KEY:}
   from: ${EMAIL_FROM:onboarding@resend.dev}
 
+email:
+  # true면 Resend 호출을 건너뛰고 인증 코드를 로그에 출력 (로컬/데모 용도). 프로덕션에서는 반드시 false.
+  mock: ${EMAIL_MOCK:false}
+
 app:
   url: ${APP_URL:http://localhost:3000}
   admin-emails: ${ADMIN_NOTIFICATION_EMAILS:}
