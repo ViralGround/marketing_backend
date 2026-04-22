@@ -8,6 +8,8 @@ import com.viralground.backend.dto.auth.SignupRequest;
 import com.viralground.backend.dto.auth.TokenResponse;
 import com.viralground.backend.service.AuthService;
 import com.viralground.backend.service.EmailVerificationService;
+import com.viralground.backend.service.RateLimitService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -24,9 +26,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final EmailVerificationService emailVerificationService;
+    private final RateLimitService rateLimitService;
 
     @PostMapping("/email/request-code")
-    public ResponseEntity<Map<String, Object>> requestEmailCode(@Valid @RequestBody EmailCodeRequest req) {
+    public ResponseEntity<Map<String, Object>> requestEmailCode(
+            @Valid @RequestBody EmailCodeRequest req,
+            HttpServletRequest httpRequest) {
+        rateLimitService.consumeRequestCodeByIp(clientIp(httpRequest));
+        rateLimitService.consumeRequestCodeByEmail(normalizeEmail(req.getEmail()));
         LocalDateTime expiresAt = emailVerificationService.requestCode(req.getEmail());
         return ResponseEntity.ok(Map.of(
                 "message", "인증 코드를 발송했습니다",
@@ -35,7 +42,10 @@ public class AuthController {
     }
 
     @PostMapping("/email/verify-code")
-    public ResponseEntity<Map<String, String>> verifyEmailCode(@Valid @RequestBody EmailCodeVerifyRequest req) {
+    public ResponseEntity<Map<String, String>> verifyEmailCode(
+            @Valid @RequestBody EmailCodeVerifyRequest req,
+            HttpServletRequest httpRequest) {
+        rateLimitService.consumeVerifyCodeByIp(clientIp(httpRequest));
         String verifiedToken = emailVerificationService.verifyCode(req.getEmail(), req.getCode());
         return ResponseEntity.ok(Map.of(
                 "message", "이메일 인증이 완료되었습니다",
@@ -58,7 +68,22 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity<TokenResponse> login(
+            @Valid @RequestBody LoginRequest req,
+            HttpServletRequest httpRequest) {
+        rateLimitService.consumeLoginByIp(clientIp(httpRequest));
         return ResponseEntity.ok(authService.login(req));
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase();
     }
 }

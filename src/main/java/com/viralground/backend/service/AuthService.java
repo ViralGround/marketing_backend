@@ -5,10 +5,13 @@ import com.viralground.backend.dto.auth.LoginRequest;
 import com.viralground.backend.dto.auth.SignupRequest;
 import com.viralground.backend.dto.auth.TokenResponse;
 import com.viralground.backend.entity.*;
+import com.viralground.backend.event.CreatorSignedUpEvent;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,8 +25,8 @@ public class AuthService {
     private final CompanyProfileRepository companyProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final EmailService emailService;
     private final EmailVerificationService emailVerificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void signup(SignupRequest req) {
@@ -35,14 +38,19 @@ public class AuthService {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
         }
 
-        Member member = memberRepository.save(Member.builder()
-                .email(email)
-                .password(passwordEncoder.encode(req.getPassword()))
-                .name(req.getName())
-                .role(Role.CREATOR)
-                .status(MemberStatus.PENDING)
-                .emailVerified(true)
-                .build());
+        Member member;
+        try {
+            member = memberRepository.saveAndFlush(Member.builder()
+                    .email(email)
+                    .password(passwordEncoder.encode(req.getPassword()))
+                    .name(req.getName())
+                    .role(Role.CREATOR)
+                    .status(MemberStatus.PENDING)
+                    .emailVerified(true)
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            throw new AppException(ErrorCode.DUPLICATE_EMAIL);
+        }
 
         creatorProfileRepository.save(CreatorProfile.builder()
                 .memberId(member.getId())
@@ -56,7 +64,7 @@ public class AuthService {
                 .build());
 
         emailVerificationService.consume(email);
-        emailService.notifyAdminsOfNewCreator(member.getName(), member.getEmail());
+        eventPublisher.publishEvent(new CreatorSignedUpEvent(member.getName(), member.getEmail()));
     }
 
     @Transactional
@@ -69,14 +77,19 @@ public class AuthService {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
         }
 
-        Member member = memberRepository.save(Member.builder()
-                .email(email)
-                .password(passwordEncoder.encode(req.getPassword()))
-                .name(req.getName())
-                .role(Role.COMPANY)
-                .status(MemberStatus.APPROVED)
-                .emailVerified(true)
-                .build());
+        Member member;
+        try {
+            member = memberRepository.saveAndFlush(Member.builder()
+                    .email(email)
+                    .password(passwordEncoder.encode(req.getPassword()))
+                    .name(req.getName())
+                    .role(Role.COMPANY)
+                    .status(MemberStatus.APPROVED)
+                    .emailVerified(true)
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            throw new AppException(ErrorCode.DUPLICATE_EMAIL);
+        }
 
         companyProfileRepository.save(CompanyProfile.builder()
                 .memberId(member.getId())

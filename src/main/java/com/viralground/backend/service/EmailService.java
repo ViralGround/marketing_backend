@@ -1,11 +1,14 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.event.CreatorSignedUpEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.client.RestClient;
 
 import java.util.Arrays;
@@ -54,6 +57,11 @@ public class EmailService {
     }
 
     @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onCreatorSignedUp(CreatorSignedUpEvent event) {
+        notifyAdminsOfNewCreator(event.name(), event.email());
+    }
+
     public void notifyAdminsOfNewCreator(String name, String email) {
         if (adminEmails.isEmpty()) return;
         String html = "<p>새 크레이터 가입 신청이 접수되었습니다.</p><p>이름: %s<br>이메일: %s</p>".formatted(name, email);

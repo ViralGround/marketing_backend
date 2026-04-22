@@ -39,6 +39,7 @@ dependencies {
 	implementation 'io.sentry:sentry-spring-boot-starter-jakarta:8.11.1'
 	implementation 'io.sentry:sentry-logback:8.11.1'
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'com.bucket4j:bucket4j-core:8.10.1'
 }
 
 tasks.named('test') {

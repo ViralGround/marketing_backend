@@ -31,7 +31,8 @@ public enum ErrorCode {
     SELF_DELETE_FORBIDDEN("SELF_DELETE_FORBIDDEN", "자기 자신은 삭제할 수 없습니다", HttpStatus.FORBIDDEN),
     INVALID_ESCROW_STATE("INVALID_ESCROW_STATE", "현재 예치금 상태에서 허용되지 않는 작업입니다", HttpStatus.BAD_REQUEST),
     INSUFFICIENT_ESCROW_BALANCE("INSUFFICIENT_ESCROW_BALANCE", "예치금 잔액이 부족합니다", HttpStatus.BAD_REQUEST),
-    INVALID_CAMPAIGN_INPUT("INVALID_CAMPAIGN_INPUT", "캠페인 입력값이 올바르지 않습니다", HttpStatus.BAD_REQUEST);
+    INVALID_CAMPAIGN_INPUT("INVALID_CAMPAIGN_INPUT", "캠페인 입력값이 올바르지 않습니다", HttpStatus.BAD_REQUEST),
+    RATE_LIMIT_EXCEEDED("RATE_LIMIT_EXCEEDED", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS);
 
     private final String code;
     private final String message;
