@@ -12,10 +12,13 @@ import com.viralground.backend.entity.EscrowStatus;
 import com.viralground.backend.entity.Member;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
+import com.viralground.backend.event.ApplicationResultEvent;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
+import com.viralground.backend.repository.EscrowTransactionRepository;
 import com.viralground.backend.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,7 +36,8 @@ public class CompanyService {
     private final CampaignApplicationRepository applicationRepository;
     private final MemberRepository memberRepository;
     private final EscrowService escrowService;
-    private final EmailService emailService;
+    private final EscrowTransactionRepository escrowTransactionRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public CompanyCampaignResponse createCampaign(Integer companyMemberId, CompanyCampaignCreateRequest req) {
@@ -60,15 +65,64 @@ public class CompanyService {
     }
 
     public List<CompanyCampaignResponse> listCampaigns(Integer companyMemberId) {
-        return campaignRepository.findByCreatedByIdOrderByCreatedAtDesc(companyMemberId).stream()
+        List<Campaign> campaigns = campaignRepository.findByCreatedByIdOrderByCreatedAtDesc(companyMemberId);
+        if (campaigns.isEmpty()) return List.of();
+
+        List<Integer> ids = campaigns.stream().map(Campaign::getId).toList();
+        Map<Integer, Long> countByCampaignId = applicationRepository.countByCampaignIdIn(ids).stream()
+                .collect(Collectors.toMap(
+                        CampaignApplicationRepository.CampaignCountRow::getCampaignId,
+                        CampaignApplicationRepository.CampaignCountRow::getCount));
+
+        return campaigns.stream()
                 .map(c -> new CompanyCampaignResponse(c,
-                        (int) applicationRepository.countByCampaignId(c.getId())))
+                        countByCampaignId.getOrDefault(c.getId(), 0L).intValue()))
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public CompanyCampaignResponse getCampaign(Integer campaignId, Integer companyMemberId) {
         Campaign c = loadOwned(campaignId, companyMemberId);
-        return new CompanyCampaignResponse(c, (int) applicationRepository.countByCampaignId(c.getId()));
+
+        List<CampaignApplication> apps = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId());
+
+        Map<Integer, Member> creatorById = apps.isEmpty()
+                ? Map.of()
+                : memberRepository.findAllById(
+                        apps.stream().map(CampaignApplication::getCreatorId).distinct().toList())
+                    .stream()
+                    .collect(Collectors.toMap(Member::getId, m -> m));
+
+        List<CompanyCampaignResponse.ApplicationItem> applicationItems = apps.stream()
+                .map(a -> {
+                    Member cr = creatorById.get(a.getCreatorId());
+                    CompanyCampaignResponse.CreatorInfo info = cr == null
+                            ? new CompanyCampaignResponse.CreatorInfo(a.getCreatorId(), "(알 수 없음)", "")
+                            : new CompanyCampaignResponse.CreatorInfo(cr.getId(), cr.getName(), cr.getEmail());
+                    return new CompanyCampaignResponse.ApplicationItem(
+                            a.getId(),
+                            a.getStatus(),
+                            a.getMessage(),
+                            a.getSubmissionUrl(),
+                            a.getRewardPaidAmount(),
+                            a.getAppliedAt(),
+                            a.getSubmittedAt(),
+                            a.getSettledAt(),
+                            info);
+                })
+                .toList();
+
+        List<CompanyCampaignResponse.EscrowTransactionItem> escrowItems =
+                escrowTransactionRepository.findByCampaignIdOrderByCreatedAtDesc(c.getId()).stream()
+                        .map(tx -> new CompanyCampaignResponse.EscrowTransactionItem(
+                                tx.getId(),
+                                tx.getType(),
+                                tx.getAmount(),
+                                tx.getMemo(),
+                                tx.getCreatedAt()))
+                        .toList();
+
+        return new CompanyCampaignResponse(c, apps.size(), applicationItems, escrowItems);
     }
 
     public Map<String, Object> getDashboardSummary(Integer companyMemberId) {
@@ -102,8 +156,18 @@ public class CompanyService {
             if (c.getEscrowStatus() != EscrowStatus.PENDING_DEPOSIT) {
                 throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
             }
-            if (req.getRewardAmount() != null) c.setRewardAmount(req.getRewardAmount());
-            if (req.getMaxParticipants() != null) c.setMaxParticipants(req.getMaxParticipants());
+            if (req.getRewardAmount() != null) {
+                if (req.getRewardAmount() < 0) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                c.setRewardAmount(req.getRewardAmount());
+            }
+            if (req.getMaxParticipants() != null) {
+                if (req.getMaxParticipants() < 1) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                c.setMaxParticipants(req.getMaxParticipants());
+            }
             c.setTotalBudget(c.getRewardAmount() * c.getMaxParticipants());
         }
 
@@ -147,7 +211,7 @@ public class CompanyService {
     @Transactional
     public void manageApplication(Integer applicationId, Integer companyMemberId,
                                   CompanyApplicationActionRequest req) {
-        CampaignApplication app = applicationRepository.findById(applicationId)
+        CampaignApplication app = applicationRepository.findByIdForUpdate(applicationId)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
         Campaign campaign = campaignRepository.findById(app.getCampaignId())
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
@@ -162,7 +226,7 @@ public class CompanyService {
                 }
                 app.setStatus(ApplicationStatus.APPROVED);
                 app.setReviewedAt(LocalDateTime.now());
-                notifyCreator(app, campaign, "APPROVED", null);
+                publishApplicationResult(app, campaign, "APPROVED", null);
             }
             case REJECT -> {
                 if (app.getStatus() != ApplicationStatus.PENDING) {
@@ -170,7 +234,7 @@ public class CompanyService {
                 }
                 app.setStatus(ApplicationStatus.REJECTED);
                 app.setReviewedAt(LocalDateTime.now());
-                notifyCreator(app, campaign, "REJECTED", null);
+                publishApplicationResult(app, campaign, "REJECTED", null);
             }
             case SETTLE -> {
                 if (app.getStatus() != ApplicationStatus.SUBMITTED) {
@@ -179,11 +243,14 @@ public class CompanyService {
                 int payout = req.getRewardPaidAmount() != null
                         ? req.getRewardPaidAmount()
                         : campaign.getRewardAmount();
+                if (payout <= 0 || payout > campaign.getRewardAmount()) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
                 escrowService.release(campaign.getId(), app.getId(), payout);
                 app.setStatus(ApplicationStatus.SETTLED);
                 app.setRewardPaidAmount(payout);
                 app.setSettledAt(LocalDateTime.now());
-                notifyCreator(app, campaign, "SETTLED", payout);
+                publishApplicationResult(app, campaign, "SETTLED", payout);
             }
             case REQUEST_REREVIEW -> {
                 if (app.getStatus() != ApplicationStatus.SUBMITTED) {
@@ -198,15 +265,15 @@ public class CompanyService {
         applicationRepository.save(app);
     }
 
-    private void notifyCreator(CampaignApplication app, Campaign campaign, String status, Integer rewardAmount) {
+    private void publishApplicationResult(CampaignApplication app, Campaign campaign, String status, Integer rewardAmount) {
         memberRepository.findById(app.getCreatorId()).ifPresent((Member creator) ->
-                emailService.notifyCreatorOfApplicationResult(
+                eventPublisher.publishEvent(new ApplicationResultEvent(
                         creator.getEmail(),
                         creator.getName(),
                         campaign.getTitle(),
                         status,
                         rewardAmount
-                )
+                ))
         );
     }
 

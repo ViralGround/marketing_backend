@@ -1,5 +1,6 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.event.ApplicationResultEvent;
 import com.viralground.backend.event.CreatorSignedUpEvent;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
@@ -94,6 +95,17 @@ public class EmailService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCreatorSignedUp(CreatorSignedUpEvent event) {
         notifyAdminsOfNewCreator(event.name(), event.email());
+    }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onApplicationResult(ApplicationResultEvent event) {
+        notifyCreatorOfApplicationResult(
+                event.creatorEmail(),
+                event.creatorName(),
+                event.campaignTitle(),
+                event.status(),
+                event.rewardAmount());
     }
 
     public void notifyAdminsOfNewCreator(String name, String email) {

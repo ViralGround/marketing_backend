@@ -1,6 +1,7 @@
 package com.viralground.backend.dto.company;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,5 +19,6 @@ public class CompanyApplicationActionRequest {
     @NotNull
     private Action action;
 
+    @Positive
     private Integer rewardPaidAmount;
 }
