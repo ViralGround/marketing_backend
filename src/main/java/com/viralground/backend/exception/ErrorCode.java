@@ -32,7 +32,8 @@ public enum ErrorCode {
     INVALID_ESCROW_STATE("INVALID_ESCROW_STATE", "현재 예치금 상태에서 허용되지 않는 작업입니다", HttpStatus.BAD_REQUEST),
     INSUFFICIENT_ESCROW_BALANCE("INSUFFICIENT_ESCROW_BALANCE", "예치금 잔액이 부족합니다", HttpStatus.BAD_REQUEST),
     INVALID_CAMPAIGN_INPUT("INVALID_CAMPAIGN_INPUT", "캠페인 입력값이 올바르지 않습니다", HttpStatus.BAD_REQUEST),
-    RATE_LIMIT_EXCEEDED("RATE_LIMIT_EXCEEDED", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS);
+    RATE_LIMIT_EXCEEDED("RATE_LIMIT_EXCEEDED", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
+    EMAIL_SEND_FAILED("EMAIL_SEND_FAILED", "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE);
 
     private final String code;
     private final String message;
