@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,12 @@ public class AdminService {
         long approved = members.stream().filter(m -> m.getStatus() == MemberStatus.APPROVED).count();
         long rejected = members.stream().filter(m -> m.getStatus() == MemberStatus.REJECTED).count();
 
+        long total = memberRepository.count();
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
+        long todayCount = memberRepository.countByCreatedAtAfter(todayStart);
+        long weekCount = memberRepository.countByCreatedAtAfter(weekAgo);
+
         List<Map<String, Object>> list = members.stream()
                 .map(m -> Map.<String, Object>of(
                         "id", m.getId(),
@@ -50,8 +57,16 @@ public class AdminService {
                 ))
                 .toList();
 
+        Map<String, Object> stats = Map.of(
+                "total", total,
+                "pendingCount", pending,
+                "approvedCount", approved,
+                "rejectedCount", rejected,
+                "todayCount", todayCount,
+                "weekCount", weekCount
+        );
         return Map.of(
-                "stats", Map.of("pending", pending, "approved", approved, "rejected", rejected),
+                "stats", stats,
                 "members", list
         );
     }
@@ -90,17 +105,21 @@ public class AdminService {
         CampaignStatus status = (statusStr != null && !"ALL".equals(statusStr))
                 ? CampaignStatus.valueOf(statusStr) : null;
         return campaignRepository.findAllByStatus(status).stream()
-                .map(c -> Map.<String, Object>of(
-                        "id", c.getId(),
-                        "title", c.getTitle(),
-                        "brandName", c.getBrandName(),
-                        "rewardAmount", c.getRewardAmount(),
-                        "maxParticipants", c.getMaxParticipants(),
-                        "status", c.getStatus().name(),
-                        "deadline", c.getDeadline() != null ? c.getDeadline() : "",
-                        "createdAt", c.getCreatedAt(),
-                        "applicationCount", applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId()).size()
-                ))
+                .map(c -> {
+                    Map<String, Object> m = new java.util.HashMap<>();
+                    m.put("id", c.getId());
+                    m.put("title", c.getTitle());
+                    m.put("brandName", c.getBrandName());
+                    m.put("rewardAmount", c.getRewardAmount());
+                    m.put("maxParticipants", c.getMaxParticipants());
+                    m.put("status", c.getStatus().name());
+                    m.put("escrowStatus", c.getEscrowStatus().name());
+                    m.put("deadline", c.getDeadline() != null ? c.getDeadline() : "");
+                    m.put("createdAt", c.getCreatedAt());
+                    m.put("applicationCount",
+                            applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId()).size());
+                    return m;
+                })
                 .toList();
     }
 
@@ -113,16 +132,24 @@ public class AdminService {
 
     @Transactional
     public Campaign createCampaign(CampaignCreateRequest req, Integer adminId) {
+        if (req.getRewardAmount() == null || req.getMaxParticipants() == null
+                || req.getRewardAmount() < 0 || req.getMaxParticipants() < 1) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+        int totalBudget = req.getRewardAmount() * req.getMaxParticipants();
         return campaignRepository.save(Campaign.builder()
                 .title(req.getTitle())
                 .description(req.getDescription())
                 .brandName(req.getBrandName())
                 .rewardAmount(req.getRewardAmount())
                 .maxParticipants(req.getMaxParticipants())
+                .totalBudget(totalBudget)
                 .thumbnailUrl(req.getThumbnailUrl())
                 .requirements(req.getRequirements())
                 .deadline(req.getDeadline())
                 .createdById(adminId)
+                .status(CampaignStatus.OPEN)
+                .escrowStatus(EscrowStatus.FUNDED)
                 .build());
     }
 

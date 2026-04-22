@@ -5,6 +5,7 @@ import com.viralground.backend.entity.MemberStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,6 +14,8 @@ public interface MemberRepository extends JpaRepository<Member, Integer> {
     Optional<Member> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    long countByCreatedAtAfter(LocalDateTime createdAt);
 
     @Query("""
             SELECT m FROM Member m
