@@ -45,6 +45,13 @@ app:
   url: ${APP_URL:http://localhost:3000}
   admin-emails: ${ADMIN_NOTIFICATION_EMAILS:}
 
+admin:
+  # 부트스트랩 ADMIN 계정. email+password 둘 다 세팅되어 있고 DB에 해당 이메일의 멤버가 없으면 기동 시 1회 생성.
+  bootstrap:
+    email: ${ADMIN_BOOTSTRAP_EMAIL:}
+    password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+    name: ${ADMIN_BOOTSTRAP_NAME:Admin}
+
 cors:
   allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
 
