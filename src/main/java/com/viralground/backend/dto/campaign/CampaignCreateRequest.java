@@ -32,4 +32,9 @@ public class CampaignCreateRequest {
     private String thumbnailUrl;
     private String requirements;
     private LocalDateTime deadline;
+
+    /**
+     * true (또는 null) 이면 OPEN/FUNDED 로 즉시 생성, false 면 DRAFT/PENDING_DEPOSIT 로 생성.
+     */
+    private Boolean immediatelyOpen;
 }

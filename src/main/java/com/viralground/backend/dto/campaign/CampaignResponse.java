@@ -21,9 +21,10 @@ public class CampaignResponse {
     private final Integer maxParticipants;
     private final CampaignStatus status;
     private final LocalDateTime createdAt;
+    private final Integer applicationCount;
     private final ApplicationSummary myApplication;
 
-    public CampaignResponse(Campaign c, CampaignApplication myApp) {
+    public CampaignResponse(Campaign c, CampaignApplication myApp, int applicationCount) {
         this.id = c.getId();
         this.title = c.getTitle();
         this.description = c.getDescription();
@@ -35,6 +36,7 @@ public class CampaignResponse {
         this.maxParticipants = c.getMaxParticipants();
         this.status = c.getStatus();
         this.createdAt = c.getCreatedAt();
+        this.applicationCount = applicationCount;
         this.myApplication = myApp != null ? new ApplicationSummary(myApp) : null;
     }
 

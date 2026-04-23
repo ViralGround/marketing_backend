@@ -86,6 +86,50 @@ public class EscrowService {
     }
 
     /**
+     * 관리자가 예치금을 임의로 완료 처리한다.
+     * NONE / PENDING_DEPOSIT / DEPOSIT_CONFIRMING → FUNDED, 캠페인 status DRAFT → OPEN.
+     * 기업이 "계좌이체 완료"를 누르지 않은 상태에서도 오프라인 합의 등으로 즉시 완료할 때 사용.
+     */
+    @Transactional
+    public void forceConfirmDeposit(Integer campaignId) {
+        Campaign campaign = campaignRepository.findById(campaignId)
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+
+        EscrowStatus current = campaign.getEscrowStatus();
+        if (current != EscrowStatus.NONE
+                && current != EscrowStatus.PENDING_DEPOSIT
+                && current != EscrowStatus.DEPOSIT_CONFIRMING) {
+            throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
+        }
+
+        PaymentGateway.DepositResult result = paymentGateway.confirmDeposit(
+                campaign.getId(), campaign.getTotalBudget(), "admin force deposit");
+
+        escrowTransactionRepository.save(EscrowTransaction.builder()
+                .campaignId(campaign.getId())
+                .type(EscrowTxType.DEPOSIT)
+                .amount(campaign.getTotalBudget())
+                .memo(result.providerTxId())
+                .build());
+
+        campaign.setEscrowStatus(EscrowStatus.FUNDED);
+        campaign.setFundedAt(LocalDateTime.now());
+        if (campaign.getStatus() == CampaignStatus.DRAFT) {
+            campaign.setStatus(CampaignStatus.OPEN);
+        }
+        campaignRepository.save(campaign);
+
+        memberRepository.findById(campaign.getCreatedById()).ifPresent(owner -> {
+            if (owner.getRole() == Role.COMPANY) {
+                companyProfileRepository.findByMemberId(owner.getId()).ifPresent(profile ->
+                        emailService.notifyCompanyOfEscrowFunded(
+                                owner.getEmail(), profile.getCompanyName(), campaign.getTitle())
+                );
+            }
+        });
+    }
+
+    /**
      * 관리자가 입금 확인을 반려한다. DEPOSIT_CONFIRMING → PENDING_DEPOSIT
      */
     @Transactional

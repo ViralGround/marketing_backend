@@ -21,6 +21,8 @@ public class CampaignDetailResponse {
     private final LocalDateTime deadline;
     private final Integer maxParticipants;
     private final String status;
+    private final String escrowStatus;
+    private final LocalDateTime fundedAt;
     private final LocalDateTime createdAt;
     private final List<ApplicationInfo> applications;
 
@@ -35,6 +37,8 @@ public class CampaignDetailResponse {
         this.deadline = c.getDeadline();
         this.maxParticipants = c.getMaxParticipants();
         this.status = c.getStatus().name();
+        this.escrowStatus = c.getEscrowStatus().name();
+        this.fundedAt = c.getFundedAt();
         this.createdAt = c.getCreatedAt();
         this.applications = apps.stream().map(ApplicationInfo::new).toList();
     }

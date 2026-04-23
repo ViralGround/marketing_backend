@@ -119,4 +119,10 @@ public class AdminController {
         escrowService.rejectDeposit(id);
         return ResponseEntity.ok(Map.of("message", "입금 확인이 반려되었습니다."));
     }
+
+    @PostMapping("/campaigns/{id}/escrow/force-complete")
+    ResponseEntity<Map<String, String>> forceCompleteEscrow(@PathVariable Integer id) {
+        escrowService.forceConfirmDeposit(id);
+        return ResponseEntity.ok(Map.of("message", "예치금이 완료 처리되었습니다."));
+    }
 }

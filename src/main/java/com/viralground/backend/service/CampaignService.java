@@ -43,7 +43,10 @@ public class CampaignService {
 
         return campaigns.stream()
                 .sorted(comparator)
-                .map(c -> new CampaignResponse(c, myApps.get(c.getId())))
+                .map(c -> new CampaignResponse(
+                        c,
+                        myApps.get(c.getId()),
+                        applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId()).size()))
                 .toList();
     }
 
@@ -53,7 +56,8 @@ public class CampaignService {
         CampaignApplication myApp = creatorId != null
                 ? applicationRepository.findByCampaignIdAndCreatorId(id, creatorId).orElse(null)
                 : null;
-        return new CampaignResponse(campaign, myApp);
+        int count = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id).size();
+        return new CampaignResponse(campaign, myApp, count);
     }
 
     @Transactional

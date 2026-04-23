@@ -12,7 +12,7 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
 
     @Query("""
             SELECT c FROM Campaign c
-            WHERE c.status = 'OPEN'
+            WHERE c.status = com.viralground.backend.entity.CampaignStatus.OPEN
             AND (:search IS NULL OR LOWER(c.title) LIKE LOWER(CONCAT('%', :search, '%'))
                  OR LOWER(c.brandName) LIKE LOWER(CONCAT('%', :search, '%')))
             """)

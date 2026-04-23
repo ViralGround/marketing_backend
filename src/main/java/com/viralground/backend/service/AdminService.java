@@ -27,6 +27,7 @@ public class AdminService {
     private final CompanyProfileRepository companyProfileRepository;
     private final CampaignRepository campaignRepository;
     private final CampaignApplicationRepository applicationRepository;
+    private final EscrowTransactionRepository escrowTransactionRepository;
     private final EmailService emailService;
     private final EscrowService escrowService;
 
@@ -138,7 +139,10 @@ public class AdminService {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
         int totalBudget = req.getRewardAmount() * req.getMaxParticipants();
-        return campaignRepository.save(Campaign.builder()
+
+        boolean immediatelyOpen = req.getImmediatelyOpen() == null || req.getImmediatelyOpen();
+
+        Campaign.CampaignBuilder builder = Campaign.builder()
                 .title(req.getTitle())
                 .description(req.getDescription())
                 .brandName(req.getBrandName())
@@ -148,10 +152,29 @@ public class AdminService {
                 .thumbnailUrl(req.getThumbnailUrl())
                 .requirements(req.getRequirements())
                 .deadline(req.getDeadline())
-                .createdById(adminId)
-                .status(CampaignStatus.OPEN)
-                .escrowStatus(EscrowStatus.FUNDED)
-                .build());
+                .createdById(adminId);
+
+        if (immediatelyOpen) {
+            builder.status(CampaignStatus.OPEN)
+                    .escrowStatus(EscrowStatus.FUNDED)
+                    .fundedAt(LocalDateTime.now());
+        } else {
+            builder.status(CampaignStatus.DRAFT)
+                    .escrowStatus(EscrowStatus.PENDING_DEPOSIT);
+        }
+
+        Campaign saved = campaignRepository.save(builder.build());
+
+        if (immediatelyOpen) {
+            escrowTransactionRepository.save(EscrowTransaction.builder()
+                    .campaignId(saved.getId())
+                    .type(EscrowTxType.DEPOSIT)
+                    .amount(saved.getTotalBudget())
+                    .memo("admin immediate open")
+                    .build());
+        }
+
+        return saved;
     }
 
     @Transactional
