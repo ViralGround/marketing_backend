@@ -25,20 +25,30 @@ public class CampaignService {
     private final EmailService emailService;
     private final MemberRepository memberRepository;
 
+    @Transactional(readOnly = true)
     public List<CampaignResponse> getOpenCampaigns(String sort, String search, Integer creatorId) {
         List<Campaign> campaigns = campaignRepository.findOpenCampaigns(
                 search != null && !search.isBlank() ? search : null);
+        if (campaigns.isEmpty()) return List.of();
 
         Map<Integer, CampaignApplication> myApps = creatorId != null
                 ? applicationRepository.findByCreatorIdOrderByAppliedAtDesc(creatorId).stream()
                         .collect(Collectors.toMap(CampaignApplication::getCampaignId, a -> a, (a, b) -> a))
                 : Map.of();
 
+        List<Integer> ids = campaigns.stream().map(Campaign::getId).toList();
+        Map<Integer, Long> countByCampaignId = applicationRepository.countByCampaignIdIn(ids).stream()
+                .collect(Collectors.toMap(
+                        CampaignApplicationRepository.CampaignCountRow::getCampaignId,
+                        CampaignApplicationRepository.CampaignCountRow::getCount));
+
         Comparator<Campaign> comparator = switch (sort != null ? sort : "recent") {
-            case "reward" -> Comparator.comparing(Campaign::getRewardAmount).reversed();
+            case "reward" -> Comparator.comparing(
+                    Campaign::getRewardAmount, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
             case "deadline" -> Comparator.comparing(
                     c -> c.getDeadline() != null ? c.getDeadline() : LocalDateTime.MAX);
-            default -> Comparator.comparing(Campaign::getCreatedAt).reversed();
+            default -> Comparator.comparing(
+                    Campaign::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
         };
 
         return campaigns.stream()
@@ -46,10 +56,11 @@ public class CampaignService {
                 .map(c -> new CampaignResponse(
                         c,
                         myApps.get(c.getId()),
-                        applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId()).size()))
+                        countByCampaignId.getOrDefault(c.getId(), 0L).intValue()))
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public CampaignResponse getCampaign(Integer id, Integer creatorId) {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
