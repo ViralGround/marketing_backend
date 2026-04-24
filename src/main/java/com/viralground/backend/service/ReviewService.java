@@ -15,6 +15,7 @@ import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,14 +67,21 @@ public class ReviewService {
             throw new AppException(ErrorCode.REVIEW_ALREADY_EXISTS);
         }
 
-        return reviewRepository.save(Review.builder()
+        Review review = Review.builder()
                 .applicationId(applicationId)
                 .authorId(authorId)
                 .authorRole(authorRole)
                 .targetId(targetId)
                 .rating(request.getRating())
                 .comment(request.getComment())
-                .build());
+                .build();
+        try {
+            // existsBy 와 save 사이 TOCTOU 경합 시 유니크 제약 위반을 잡아 일관된 409 로 응답.
+            // saveAndFlush 로 트랜잭션 커밋 전에 제약 위반을 드러내야 여기서 catch 가능.
+            return reviewRepository.saveAndFlush(review);
+        } catch (DataIntegrityViolationException e) {
+            throw new AppException(ErrorCode.REVIEW_ALREADY_EXISTS);
+        }
     }
 
     @Transactional(readOnly = true)

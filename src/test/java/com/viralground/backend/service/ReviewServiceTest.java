@@ -19,11 +19,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -65,7 +67,7 @@ class ReviewServiceTest {
 
         // then
         ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
-        verify(reviewRepository).save(captor.capture());
+        verify(reviewRepository).saveAndFlush(captor.capture());
         Review saved = captor.getValue();
         assertThat(saved.getApplicationId()).isEqualTo(10);
         assertThat(saved.getAuthorId()).isEqualTo(7);
@@ -88,7 +90,7 @@ class ReviewServiceTest {
 
         // then
         ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
-        verify(reviewRepository).save(captor.capture());
+        verify(reviewRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getTargetId()).isEqualTo(7);
         assertThat(captor.getValue().getAuthorRole()).isEqualTo(Role.COMPANY);
     }
@@ -120,7 +122,7 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> reviewService.writeReview(10, 7, Role.CREATOR, req))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REVIEW_ALREADY_EXISTS);
-        verify(reviewRepository, never()).save(any());
+        verify(reviewRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -147,5 +149,22 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> reviewService.writeReview(10, 7, Role.CREATOR, req))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_RATING);
+    }
+
+    @Test
+    void should_REVIEW_ALREADY_EXISTS_예외_when_저장_시점_유니크제약_위반() {
+        // given — existsBy 는 false 를 반환했지만 경쟁 요청이 먼저 save 해 유니크 제약을 위반하는 TOCTOU 시나리오
+        when(applicationRepository.findById(10)).thenReturn(Optional.of(settledApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        when(reviewRepository.existsByApplicationIdAndAuthorRole(10, Role.CREATOR)).thenReturn(false);
+        when(reviewRepository.saveAndFlush(any(Review.class)))
+                .thenThrow(new DataIntegrityViolationException("unique (application_id, author_role) 위반"));
+        WriteReviewRequest req = new WriteReviewRequest();
+        req.setRating(5);
+
+        // when & then — 500 이 아닌 사용자 친화적 409 로 변환되어야 한다
+        assertThatThrownBy(() -> reviewService.writeReview(10, 7, Role.CREATOR, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REVIEW_ALREADY_EXISTS);
     }
 }
