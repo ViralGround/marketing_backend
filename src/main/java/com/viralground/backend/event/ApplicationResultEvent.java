@@ -5,5 +5,11 @@ public record ApplicationResultEvent(
         String creatorName,
         String campaignTitle,
         String status,
-        Integer rewardAmount
-) {}
+        Integer rewardAmount,
+        String reviewComment
+) {
+    public ApplicationResultEvent(String creatorEmail, String creatorName,
+                                  String campaignTitle, String status, Integer rewardAmount) {
+        this(creatorEmail, creatorName, campaignTitle, status, rewardAmount, null);
+    }
+}

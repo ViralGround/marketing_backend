@@ -5,6 +5,7 @@ import com.viralground.backend.entity.ApplicationStatus;
 import com.viralground.backend.entity.CampaignApplication;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
+import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.MemberRepository;
@@ -35,6 +36,8 @@ class CampaignServiceSubmitWorkTest {
     EmailService emailService;
     @Mock
     MemberRepository memberRepository;
+    @Mock
+    ApplicationSubmissionRepository submissionRepository;
 
     @InjectMocks
     CampaignService campaignService;

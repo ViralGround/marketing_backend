@@ -5,6 +5,7 @@ import com.viralground.backend.entity.*;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,8 @@ class AdminServiceUpdateCampaignTest {
     @Mock EscrowTransactionRepository escrowTransactionRepository;
     @Mock EmailService emailService;
     @Mock EscrowService escrowService;
+    @Mock ApplicationSubmissionRepository submissionRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     AdminService adminService;

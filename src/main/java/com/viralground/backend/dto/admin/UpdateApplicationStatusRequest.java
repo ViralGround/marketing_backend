@@ -15,4 +15,7 @@ public class UpdateApplicationStatusRequest {
 
     @Min(0)
     private Integer rewardPaidAmount;
+
+    /** CHANGES_REQUESTED 일 때 필수, REJECTED 일 때 선택. */
+    private String reviewComment;
 }

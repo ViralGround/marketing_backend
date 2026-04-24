@@ -6,9 +6,11 @@ import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
 import com.viralground.backend.entity.*;
+import com.viralground.backend.event.ApplicationResultEvent;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,8 @@ public class AdminService {
     private final EscrowTransactionRepository escrowTransactionRepository;
     private final EmailService emailService;
     private final EscrowService escrowService;
+    private final ApplicationSubmissionRepository submissionRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ── 회원 관리 ──────────────────────────────────
 
@@ -129,7 +133,13 @@ public class AdminService {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         List<CampaignApplication> apps = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id);
-        return new CampaignDetailResponse(campaign, apps);
+        java.util.Map<Integer, java.util.List<com.viralground.backend.dto.campaign.SubmissionHistoryItem>> byAppId =
+                apps.stream().collect(java.util.stream.Collectors.toMap(
+                        CampaignApplication::getId,
+                        a -> submissionRepository.findByApplicationIdOrderBySubmittedAtAsc(a.getId()).stream()
+                                .map(com.viralground.backend.dto.campaign.SubmissionHistoryItem::from)
+                                .toList()));
+        return new CampaignDetailResponse(campaign, apps, byAppId);
     }
 
     @Transactional
@@ -260,6 +270,22 @@ public class AdminService {
                 app.setRewardPaidAmount(payout);
             }
             app.setSettledAt(LocalDateTime.now());
+            markLatestSubmission(app.getId(), null, SubmissionReviewStatus.APPROVED, null);
+        }
+        if (newStatus == ApplicationStatus.CHANGES_REQUESTED) {
+            String comment = req.getReviewComment();
+            if (comment == null || comment.isBlank()) {
+                throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+            }
+            if (app.getStatus() != ApplicationStatus.SUBMITTED) {
+                throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+            }
+            app.setReviewComment(comment);
+            markLatestSubmission(app.getId(), null, SubmissionReviewStatus.CHANGES_REQUESTED, comment);
+        }
+        if (newStatus == ApplicationStatus.REJECTED && app.getStatus() == ApplicationStatus.SUBMITTED) {
+            app.setReviewComment(req.getReviewComment());
+            markLatestSubmission(app.getId(), null, SubmissionReviewStatus.REJECTED, req.getReviewComment());
         }
         app.setStatus(newStatus);
         app.setReviewedAt(LocalDateTime.now());
@@ -272,5 +298,24 @@ public class AdminService {
                     creator.getEmail(), creator.getName(),
                     campaign.getTitle(), newStatus.name(), app.getRewardPaidAmount());
         }
+        if (newStatus == ApplicationStatus.CHANGES_REQUESTED) {
+            Member creator = memberRepository.findById(app.getCreatorId()).orElseThrow();
+            Campaign campaign = campaignRepository.findById(app.getCampaignId()).orElseThrow();
+            eventPublisher.publishEvent(new ApplicationResultEvent(
+                    creator.getEmail(), creator.getName(),
+                    campaign.getTitle(), "CHANGES_REQUESTED", null, app.getReviewComment()));
+        }
+    }
+
+    private void markLatestSubmission(Integer applicationId, Integer reviewerId,
+                                      SubmissionReviewStatus status, String comment) {
+        submissionRepository.findTopByApplicationIdOrderBySubmittedAtDesc(applicationId)
+                .ifPresent(sub -> {
+                    sub.setStatus(status);
+                    sub.setReviewerId(reviewerId);
+                    sub.setReviewComment(comment);
+                    sub.setReviewedAt(LocalDateTime.now());
+                    submissionRepository.save(sub);
+                });
     }
 }

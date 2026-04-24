@@ -45,6 +45,13 @@ public class CampaignApplication {
     @Column(name = "video_size_bytes")
     private Long videoSizeBytes;
 
+    @Column(name = "resubmission_count", nullable = false)
+    @Builder.Default
+    private Integer resubmissionCount = 0;
+
+    @Column(name = "review_comment", columnDefinition = "TEXT")
+    private String reviewComment;
+
     @Column(name = "reward_paid_amount")
     private Integer rewardPaidAmount;
 

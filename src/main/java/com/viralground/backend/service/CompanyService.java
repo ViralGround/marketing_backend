@@ -1,5 +1,6 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.dto.campaign.SubmissionHistoryItem;
 import com.viralground.backend.dto.company.CompanyApplicationActionRequest;
 import com.viralground.backend.dto.company.CompanyCampaignCreateRequest;
 import com.viralground.backend.dto.company.CompanyCampaignResponse;
@@ -13,6 +14,9 @@ import com.viralground.backend.entity.Member;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.event.ApplicationResultEvent;
+import com.viralground.backend.entity.ApplicationSubmission;
+import com.viralground.backend.entity.SubmissionReviewStatus;
+import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.EscrowTransactionRepository;
@@ -38,6 +42,7 @@ public class CompanyService {
     private final EscrowService escrowService;
     private final EscrowTransactionRepository escrowTransactionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ApplicationSubmissionRepository submissionRepository;
 
     @Transactional
     public CompanyCampaignResponse createCampaign(Integer companyMemberId, CompanyCampaignCreateRequest req) {
@@ -99,16 +104,24 @@ public class CompanyService {
                     CompanyCampaignResponse.CreatorInfo info = cr == null
                             ? new CompanyCampaignResponse.CreatorInfo(a.getCreatorId(), "(알 수 없음)", "")
                             : new CompanyCampaignResponse.CreatorInfo(cr.getId(), cr.getName(), cr.getEmail());
+                    List<SubmissionHistoryItem> history = submissionRepository
+                            .findByApplicationIdOrderBySubmittedAtAsc(a.getId()).stream()
+                            .map(SubmissionHistoryItem::from)
+                            .toList();
                     return new CompanyCampaignResponse.ApplicationItem(
                             a.getId(),
                             a.getStatus(),
                             a.getMessage(),
                             a.getSubmissionUrl(),
+                            a.getVideoFileKey(),
+                            a.getResubmissionCount(),
+                            a.getReviewComment(),
                             a.getRewardPaidAmount(),
                             a.getAppliedAt(),
                             a.getSubmittedAt(),
                             a.getSettledAt(),
-                            info);
+                            info,
+                            history);
                 })
                 .toList();
 
@@ -226,7 +239,7 @@ public class CompanyService {
                 }
                 app.setStatus(ApplicationStatus.APPROVED);
                 app.setReviewedAt(LocalDateTime.now());
-                publishApplicationResult(app, campaign, "APPROVED", null);
+                publishApplicationResult(app, campaign, "APPROVED", null, null);
             }
             case REJECT -> {
                 if (app.getStatus() != ApplicationStatus.PENDING) {
@@ -234,9 +247,9 @@ public class CompanyService {
                 }
                 app.setStatus(ApplicationStatus.REJECTED);
                 app.setReviewedAt(LocalDateTime.now());
-                publishApplicationResult(app, campaign, "REJECTED", null);
+                publishApplicationResult(app, campaign, "REJECTED", null, null);
             }
-            case SETTLE -> {
+            case SETTLE, APPROVE_VIDEO -> {
                 if (app.getStatus() != ApplicationStatus.SUBMITTED) {
                     throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
                 }
@@ -250,9 +263,39 @@ public class CompanyService {
                 app.setStatus(ApplicationStatus.SETTLED);
                 app.setRewardPaidAmount(payout);
                 app.setSettledAt(LocalDateTime.now());
-                publishApplicationResult(app, campaign, "SETTLED", payout);
+                app.setReviewedAt(LocalDateTime.now());
+                markLatestSubmission(app.getId(), companyMemberId,
+                        SubmissionReviewStatus.APPROVED, null);
+                publishApplicationResult(app, campaign, "SETTLED", payout, null);
+            }
+            case REQUEST_CHANGES -> {
+                if (app.getStatus() != ApplicationStatus.SUBMITTED) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                String comment = req.getReviewComment();
+                if (comment == null || comment.isBlank()) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                app.setStatus(ApplicationStatus.CHANGES_REQUESTED);
+                app.setReviewComment(comment);
+                app.setReviewedAt(LocalDateTime.now());
+                markLatestSubmission(app.getId(), companyMemberId,
+                        SubmissionReviewStatus.CHANGES_REQUESTED, comment);
+                publishApplicationResult(app, campaign, "CHANGES_REQUESTED", null, comment);
+            }
+            case REJECT_VIDEO -> {
+                if (app.getStatus() != ApplicationStatus.SUBMITTED) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                app.setStatus(ApplicationStatus.REJECTED);
+                app.setReviewComment(req.getReviewComment());
+                app.setReviewedAt(LocalDateTime.now());
+                markLatestSubmission(app.getId(), companyMemberId,
+                        SubmissionReviewStatus.REJECTED, req.getReviewComment());
+                publishApplicationResult(app, campaign, "REJECTED", null, req.getReviewComment());
             }
             case REQUEST_REREVIEW -> {
+                // [deprecated] REQUEST_CHANGES 로 마이그레이션 이후 사용하지 않음.
                 if (app.getStatus() != ApplicationStatus.SUBMITTED) {
                     throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
                 }
@@ -265,14 +308,28 @@ public class CompanyService {
         applicationRepository.save(app);
     }
 
-    private void publishApplicationResult(CampaignApplication app, Campaign campaign, String status, Integer rewardAmount) {
+    private void markLatestSubmission(Integer applicationId, Integer reviewerId,
+                                      SubmissionReviewStatus status, String comment) {
+        submissionRepository.findTopByApplicationIdOrderBySubmittedAtDesc(applicationId)
+                .ifPresent(sub -> {
+                    sub.setStatus(status);
+                    sub.setReviewerId(reviewerId);
+                    sub.setReviewComment(comment);
+                    sub.setReviewedAt(LocalDateTime.now());
+                    submissionRepository.save(sub);
+                });
+    }
+
+    private void publishApplicationResult(CampaignApplication app, Campaign campaign,
+                                          String status, Integer rewardAmount, String reviewComment) {
         memberRepository.findById(app.getCreatorId()).ifPresent((Member creator) ->
                 eventPublisher.publishEvent(new ApplicationResultEvent(
                         creator.getEmail(),
                         creator.getName(),
                         campaign.getTitle(),
                         status,
-                        rewardAmount
+                        rewardAmount,
+                        reviewComment
                 ))
         );
     }

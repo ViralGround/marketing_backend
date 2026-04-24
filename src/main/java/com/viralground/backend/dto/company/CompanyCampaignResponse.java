@@ -1,5 +1,6 @@
 package com.viralground.backend.dto.company;
 
+import com.viralground.backend.dto.campaign.SubmissionHistoryItem;
 import com.viralground.backend.entity.ApplicationStatus;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
@@ -62,11 +63,15 @@ public class CompanyCampaignResponse {
             ApplicationStatus status,
             String message,
             String submissionUrl,
+            String videoFileKey,
+            Integer resubmissionCount,
+            String reviewComment,
             Integer rewardPaidAmount,
             LocalDateTime appliedAt,
             LocalDateTime submittedAt,
             LocalDateTime settledAt,
-            CreatorInfo creator
+            CreatorInfo creator,
+            List<SubmissionHistoryItem> submissions
     ) {}
 
     public record CreatorInfo(Integer id, String name, String email) {}

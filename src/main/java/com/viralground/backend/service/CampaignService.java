@@ -7,6 +7,8 @@ import com.viralground.backend.entity.*;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
+
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,10 +23,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CampaignService {
 
+    private static final Set<ApplicationStatus> SUBMITTABLE = Set.of(
+            ApplicationStatus.APPROVED,
+            ApplicationStatus.SUBMITTED,
+            ApplicationStatus.CHANGES_REQUESTED);
+
     private final CampaignRepository campaignRepository;
     private final CampaignApplicationRepository applicationRepository;
     private final EmailService emailService;
     private final MemberRepository memberRepository;
+    private final ApplicationSubmissionRepository submissionRepository;
 
     @Transactional(readOnly = true)
     public List<CampaignResponse> getOpenCampaigns(String sort, String search, Integer creatorId) {
@@ -113,6 +121,12 @@ public class CampaignService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
+        // 제출은 APPROVED(최초) / SUBMITTED(검토 전 수정) / CHANGES_REQUESTED(재제출) 에서만 가능.
+        // PENDING(검토 전), REJECTED, SETTLED 상태에서는 허용하지 않는다.
+        if (!SUBMITTABLE.contains(app.getStatus())) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+
         boolean hasFile = request != null && request.videoFileKey() != null && !request.videoFileKey().isBlank();
         boolean hasUrl = request != null && request.submissionUrl() != null && !request.submissionUrl().isBlank();
         if (!hasFile && !hasUrl) {
@@ -136,9 +150,23 @@ public class CampaignService {
             app.setVideoContentType(null);
             app.setVideoSizeBytes(null);
         }
+
+        if (app.getStatus() == ApplicationStatus.CHANGES_REQUESTED) {
+            app.setResubmissionCount((app.getResubmissionCount() == null ? 0 : app.getResubmissionCount()) + 1);
+        }
+        app.setReviewComment(null);
         app.setStatus(ApplicationStatus.SUBMITTED);
         app.setSubmittedAt(LocalDateTime.now());
         applicationRepository.save(app);
+
+        submissionRepository.save(ApplicationSubmission.builder()
+                .applicationId(app.getId())
+                .videoFileKey(app.getVideoFileKey())
+                .videoContentType(app.getVideoContentType())
+                .videoSizeBytes(app.getVideoSizeBytes())
+                .submissionUrl(app.getSubmissionUrl())
+                .status(SubmissionReviewStatus.SUBMITTED)
+                .build());
     }
 
     @Transactional

@@ -100,6 +100,14 @@ public class EmailService {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onApplicationResult(ApplicationResultEvent event) {
+        if ("CHANGES_REQUESTED".equals(event.status())) {
+            notifyCreatorOfChangesRequested(
+                    event.creatorEmail(),
+                    event.creatorName(),
+                    event.campaignTitle(),
+                    event.reviewComment());
+            return;
+        }
         notifyCreatorOfApplicationResult(
                 event.creatorEmail(),
                 event.creatorName(),
@@ -149,12 +157,25 @@ public class EmailService {
 
     @Async
     public void notifyCreatorOfApplicationResult(String to, String name, String campaignTitle, String status, Integer rewardAmount) {
-        String msg = "APPROVED".equals(status)
-                ? "선정되었습니다! 보상 금액: %,d원".formatted(rewardAmount != null ? rewardAmount : 0)
-                : "선정되지 않았습니다.";
+        String msg = switch (status) {
+            case "APPROVED" -> "선정되었습니다! 보상 금액: %,d원".formatted(rewardAmount != null ? rewardAmount : 0);
+            case "SETTLED" -> "영상이 승인되어 정산이 완료되었습니다. 지급 금액: %,d원".formatted(rewardAmount != null ? rewardAmount : 0);
+            default -> "선정되지 않았거나 거절되었습니다.";
+        };
         String html = "<p>안녕하세요, %s님!</p><p>캠페인 <strong>%s</strong> 지원 결과: %s</p>"
                 .formatted(esc(name), esc(campaignTitle), msg);
         sendEmail(to, "[Viral Ground] 캠페인 지원 결과", html);
+    }
+
+    public void notifyCreatorOfChangesRequested(String to, String name, String campaignTitle, String reviewComment) {
+        String html = """
+                <p>안녕하세요, %s님!</p>
+                <p>캠페인 <strong>%s</strong> 영상 검토 결과 <strong>수정 요청</strong>이 도착했습니다.</p>
+                <div style="background:#f8f9fa;border-left:3px solid #ffa500;padding:12px 16px;margin:16px 0;color:#555;">%s</div>
+                <p>마이페이지에서 재제출 해주세요.</p>
+                """.formatted(esc(name), esc(campaignTitle),
+                reviewComment == null || reviewComment.isBlank() ? "사유가 전달되지 않았습니다." : esc(reviewComment));
+        sendEmail(to, "[Viral Ground] 영상 수정 요청", html);
     }
 
     private void sendEmail(String to, String subject, String html) {
