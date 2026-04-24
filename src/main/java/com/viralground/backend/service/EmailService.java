@@ -113,7 +113,8 @@ public class EmailService {
                 event.creatorName(),
                 event.campaignTitle(),
                 event.status(),
-                event.rewardAmount());
+                event.rewardAmount(),
+                event.reviewComment());
     }
 
     public void notifyAdminsOfNewCreator(String name, String email) {
@@ -156,10 +157,17 @@ public class EmailService {
     }
 
     @Async
-    public void notifyCreatorOfApplicationResult(String to, String name, String campaignTitle, String status, Integer rewardAmount) {
+    public void notifyCreatorOfApplicationResult(String to, String name, String campaignTitle,
+                                                 String status, Integer rewardAmount, String reviewComment) {
         String msg = switch (status) {
             case "APPROVED" -> "선정되었습니다! 보상 금액: %,d원".formatted(rewardAmount != null ? rewardAmount : 0);
             case "SETTLED" -> "영상이 승인되어 정산이 완료되었습니다. 지급 금액: %,d원".formatted(rewardAmount != null ? rewardAmount : 0);
+            case "REJECTED" -> {
+                String base = "선정되지 않았거나 거절되었습니다.";
+                yield (reviewComment != null && !reviewComment.isBlank())
+                        ? base + "<br/>사유: " + esc(reviewComment)
+                        : base;
+            }
             default -> "선정되지 않았거나 거절되었습니다.";
         };
         String html = "<p>안녕하세요, %s님!</p><p>캠페인 <strong>%s</strong> 지원 결과: %s</p>"

@@ -363,7 +363,8 @@ public class AdminService {
             Campaign campaign = campaignRepository.findById(app.getCampaignId()).orElseThrow();
             emailService.notifyCreatorOfApplicationResult(
                     creator.getEmail(), creator.getName(),
-                    campaign.getTitle(), newStatus.name(), app.getRewardPaidAmount());
+                    campaign.getTitle(), newStatus.name(), app.getRewardPaidAmount(),
+                    app.getReviewComment());
         }
         if (newStatus == ApplicationStatus.CHANGES_REQUESTED) {
             Member creator = memberRepository.findById(app.getCreatorId()).orElseThrow();
