@@ -38,7 +38,10 @@ public enum ErrorCode {
     VIDEO_TOO_LARGE("VIDEO_TOO_LARGE", "업로드 가능한 영상 용량을 초과했습니다.", HttpStatus.BAD_REQUEST),
     SUBMISSION_NOT_FOUND("SUBMISSION_NOT_FOUND", "영상 파일을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
     INVALID_SIGNATURE("INVALID_SIGNATURE", "유효하지 않은 서명입니다.", HttpStatus.UNAUTHORIZED),
-    EXPIRED_SIGNATURE("EXPIRED_SIGNATURE", "서명이 만료되었습니다. 다시 요청해주세요.", HttpStatus.UNAUTHORIZED);
+    EXPIRED_SIGNATURE("EXPIRED_SIGNATURE", "서명이 만료되었습니다. 다시 요청해주세요.", HttpStatus.UNAUTHORIZED),
+    REVIEW_NOT_ALLOWED_YET("REVIEW_NOT_ALLOWED_YET", "정산 완료 후에만 리뷰를 남길 수 있습니다.", HttpStatus.BAD_REQUEST),
+    REVIEW_ALREADY_EXISTS("REVIEW_ALREADY_EXISTS", "이미 리뷰를 작성했습니다.", HttpStatus.CONFLICT),
+    INVALID_RATING("INVALID_RATING", "평점은 1~5 사이여야 합니다.", HttpStatus.BAD_REQUEST);
 
     private final String code;
     private final String message;
