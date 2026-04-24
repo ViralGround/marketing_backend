@@ -318,6 +318,11 @@ public class AdminService {
             app.setRewardPaidAmount(req.getRewardPaidAmount());
         }
         if (newStatus == ApplicationStatus.SETTLED) {
+            // 이미 SETTLED 된 지원건은 재진입 금지. 캠페인 escrow 잔액이 남아있으면
+            // FUNDED/PARTIALLY_RELEASED 가드는 통과하므로 여기서 별도 차단이 필요하다.
+            if (app.getStatus() == ApplicationStatus.SETTLED) {
+                throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+            }
             // 예치금이 지급 가능한 상태인지 먼저 검증. 지급 실패 시 상태 전이가 일어나지 않도록
             // release() 호출 후에만 SETTLED / settledAt 을 확정한다.
             Campaign campaign = campaignRepository.findById(app.getCampaignId())

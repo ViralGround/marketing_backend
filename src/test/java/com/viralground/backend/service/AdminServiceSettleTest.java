@@ -91,4 +91,22 @@ class AdminServiceSettleTest {
         verify(escrowService).release(1, 10, 50_000);
         verify(applicationRepository).save(app);
     }
+
+    @Test
+    void should_INVALID_CAMPAIGN_INPUT_예외_when_이미_SETTLED_상태에서_SETTLED_재요청() {
+        // given — 이미 정산 완료된 지원건에 관리자가 실수로 SETTLED 를 다시 PATCH
+        app.setStatus(ApplicationStatus.SETTLED);
+        campaign.setEscrowStatus(EscrowStatus.PARTIALLY_RELEASED); // 첫 지급 이후 상태
+        when(applicationRepository.findById(10)).thenReturn(Optional.of(app));
+        UpdateApplicationStatusRequest req = new UpdateApplicationStatusRequest();
+        req.setStatus(ApplicationStatus.SETTLED);
+
+        // when & then — 재지급이 발생하면 안 되므로 상태 전이 자체를 거부
+        assertThatThrownBy(() -> adminService.updateApplication(10, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+
+        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt());
+        verify(applicationRepository, never()).save(any());
+    }
 }
