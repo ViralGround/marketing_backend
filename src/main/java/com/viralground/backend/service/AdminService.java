@@ -290,7 +290,13 @@ public class AdminService {
     }
 
     public List<Map<String, Object>> getPendingEscrowCampaigns() {
-        return campaignRepository.findByEscrowStatusOrderByDepositRequestedAtAsc(EscrowStatus.DEPOSIT_CONFIRMING).stream()
+        // PENDING_DEPOSIT 은 기업이 아직 계좌이체 완료를 누르지 않은 상태,
+        // DEPOSIT_CONFIRMING 은 입금 신청 후 관리자 확인 대기. 두 상태 모두 관리자가
+        // 현황을 파악해야 하므로 함께 반환하고, 프론트는 escrowStatus 로 액션 버튼을 분기한다.
+        return campaignRepository
+                .findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(
+                        List.of(EscrowStatus.PENDING_DEPOSIT, EscrowStatus.DEPOSIT_CONFIRMING))
+                .stream()
                 .map(c -> {
                     String companyName = companyProfileRepository.findByMemberId(c.getCreatedById())
                             .map(p -> p.getCompanyName())
@@ -303,6 +309,7 @@ public class AdminService {
                     m.put("totalBudget", c.getTotalBudget());
                     m.put("rewardAmount", c.getRewardAmount());
                     m.put("maxParticipants", c.getMaxParticipants());
+                    m.put("escrowStatus", c.getEscrowStatus().name());
                     m.put("depositRequestedAt", c.getDepositRequestedAt());
                     m.put("createdAt", c.getCreatedAt());
                     return m;
