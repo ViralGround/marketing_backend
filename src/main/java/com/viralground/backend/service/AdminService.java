@@ -57,15 +57,21 @@ public class AdminService {
         long weekCount = memberRepository.countByCreatedAtAfter(weekAgo);
 
         List<Map<String, Object>> list = members.stream()
-                .map(m -> Map.<String, Object>of(
-                        "id", m.getId(),
-                        "email", m.getEmail(),
-                        "name", m.getName(),
-                        "role", m.getRole().name(),
-                        "status", m.getStatus().name(),
-                        "emailVerified", m.getEmailVerified(),
-                        "createdAt", m.getCreatedAt()
-                ))
+                .map(m -> {
+                    Map<String, Object> row = new java.util.HashMap<>();
+                    row.put("id", m.getId());
+                    row.put("email", m.getEmail());
+                    row.put("name", m.getName());
+                    row.put("role", m.getRole().name());
+                    row.put("status", m.getStatus().name());
+                    row.put("emailVerified", m.getEmailVerified());
+                    row.put("createdAt", m.getCreatedAt());
+                    row.put("instagramId", m.getRole() == Role.CREATOR
+                            ? profileRepository.findByMemberId(m.getId())
+                                    .map(CreatorProfile::getInstagramId).orElse(null)
+                            : null);
+                    return row;
+                })
                 .toList();
 
         Map<String, Object> stats = Map.of(
