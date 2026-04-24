@@ -19,6 +19,9 @@ server:
   # Railway/리버스 프록시 뒤에서만 X-Forwarded-* 헤더를 신뢰해 request.getRemoteAddr()가 실제 클라이언트 IP를 반환.
   # 직접 노출 환경에서는 공격자가 헤더를 위조할 수 있으므로 FORWARD_HEADERS_STRATEGY=none 으로 끌 것.
   forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}
+  tomcat:
+    # files.max-size-bytes 와 동일값. 413 반환 전에 Tomcat 이 요청을 삼키는 크기 상한 — 이보다 큰 본문은 바로 연결이 끊긴다.
+    max-swallow-size: ${FILES_MAX_SIZE_BYTES:524288000}
 
 management:
   endpoints:

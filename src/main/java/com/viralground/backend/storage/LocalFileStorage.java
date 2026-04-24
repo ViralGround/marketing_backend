@@ -49,6 +49,10 @@ public class LocalFileStorage implements FileStorage {
         this.signingSecret = signingSecret;
     }
 
+    public long getMaxSizeBytes() {
+        return props.getMaxSizeBytes();
+    }
+
     @PostConstruct
     void initDirectory() {
         try {
@@ -107,7 +111,14 @@ public class LocalFileStorage implements FileStorage {
         Path target = resolve(fileKey);
         try {
             Files.createDirectories(target.getParent());
-            Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+            // chunked 또는 Content-Length 위조로 본문이 상한을 넘는 경우 스트림을 즉시 끊는다.
+            try (InputStream limited = new BoundedInputStream(in, props.getMaxSizeBytes())) {
+                Files.copy(limited, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (BoundedInputStream.LimitExceededException e) {
+                Files.deleteIfExists(target);
+                throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+            }
+            // 스트림 커트가 실패한 경우에 대비한 사후 검증 (이중 안전).
             if (Files.size(target) > props.getMaxSizeBytes()) {
                 Files.deleteIfExists(target);
                 throw new AppException(ErrorCode.VIDEO_TOO_LARGE);

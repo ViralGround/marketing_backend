@@ -181,6 +181,27 @@ class LocalFileStorageTest {
     }
 
     @Test
+    void should_VIDEO_TOO_LARGE_예외_when_스트림이_상한_초과() {
+        // given — Content-Length 는 정상이지만 실제 스트림이 max 를 초과하는 케이스
+        props.setMaxSizeBytes(16);
+        storage = new LocalFileStorage(props, fixedClock, SECRET);
+        storage.initDirectory();
+        PresignedUpload presigned = storage.presignUpload("video/mp4", 16L);
+        Map<String, String> q = parseQuery(presigned.uploadUrl());
+        byte[] oversized = new byte[64]; // max 16 바이트보다 훨씬 큼
+
+        // when & then — BoundedInputStream 이 스트림을 끊어 VIDEO_TOO_LARGE 변환
+        assertThatThrownBy(() -> storage.acceptUpload(presigned.fileKey(), q.get("sig"),
+                Long.parseLong(q.get("exp")), new ByteArrayInputStream(oversized),
+                "video/mp4", 16L))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.VIDEO_TOO_LARGE);
+
+        // 부분 저장된 파일은 제거되어야 함
+        assertThat(tempDir.resolve(presigned.fileKey())).doesNotExist();
+    }
+
+    @Test
     void should_FORBIDDEN_예외_when_경로탈출_시도() {
         // given
         Instant expires = NOW.plusSeconds(900);
