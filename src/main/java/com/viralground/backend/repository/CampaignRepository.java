@@ -3,13 +3,24 @@ package com.viralground.backend.repository;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
 import com.viralground.backend.entity.EscrowStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
+
+    /**
+     * 에스크로 상태 전이(입금 확인·지급·환불)에 사용할 비관적 락 조회.
+     * 같은 캠페인에 대한 동시 요청을 직렬화해 중복 지급/중복 DEPOSIT 기록을 방지.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Campaign c WHERE c.id = :id")
+    Optional<Campaign> findByIdForUpdate(@Param("id") Integer id);
 
     @Query("""
             SELECT c FROM Campaign c

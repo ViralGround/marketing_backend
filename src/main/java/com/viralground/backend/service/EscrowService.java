@@ -54,9 +54,14 @@ public class EscrowService {
      */
     @Transactional
     public void confirmDeposit(Integer campaignId) {
-        Campaign campaign = campaignRepository.findById(campaignId)
+        // 캠페인 행 쓰기 락으로 동시 confirmDeposit 를 직렬화. 동일 캠페인에
+        // 이미 DEPOSIT 트랜잭션이 기록됐다면 중복 호출로 간주하고 거부.
+        Campaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         if (campaign.getEscrowStatus() != EscrowStatus.DEPOSIT_CONFIRMING) {
+            throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
+        }
+        if (escrowTransactionRepository.existsByCampaignIdAndType(campaignId, EscrowTxType.DEPOSIT)) {
             throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
         }
 
@@ -150,7 +155,9 @@ public class EscrowService {
      */
     @Transactional
     public void release(Integer campaignId, Integer applicationId, Integer amount) {
-        Campaign campaign = campaignRepository.findById(campaignId)
+        // 잔액 계산 + RELEASE 기록을 같은 임계구역에서 처리해야 동시 지급 시
+        // 같은 잔액을 두 번 참조하는 초과 지급을 막을 수 있다.
+        Campaign campaign = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
 
         if (campaign.getEscrowStatus() != EscrowStatus.FUNDED

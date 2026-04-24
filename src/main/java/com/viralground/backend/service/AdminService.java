@@ -184,8 +184,20 @@ public class AdminService {
         if (req.getTitle() != null) c.setTitle(req.getTitle());
         if (req.getDescription() != null) c.setDescription(req.getDescription());
         if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
-        if (req.getRewardAmount() != null) c.setRewardAmount(req.getRewardAmount());
-        if (req.getMaxParticipants() != null) c.setMaxParticipants(req.getMaxParticipants());
+
+        boolean budgetAffected = req.getRewardAmount() != null || req.getMaxParticipants() != null;
+        if (budgetAffected) {
+            // 예치가 이미 확정된 캠페인은 예산 변경 자체를 막는다. 이미 입금·지급된 금액과
+            // 재계산된 totalBudget 이 어긋나면 정산 로직 전반이 깨지기 때문.
+            EscrowStatus es = c.getEscrowStatus();
+            if (es != EscrowStatus.NONE && es != EscrowStatus.PENDING_DEPOSIT) {
+                throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
+            }
+            if (req.getRewardAmount() != null) c.setRewardAmount(req.getRewardAmount());
+            if (req.getMaxParticipants() != null) c.setMaxParticipants(req.getMaxParticipants());
+            c.setTotalBudget(c.getRewardAmount() * c.getMaxParticipants());
+        }
+
         if (req.getThumbnailUrl() != null) c.setThumbnailUrl(req.getThumbnailUrl());
         if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
         if (req.getStatus() != null) c.setStatus(req.getStatus());
@@ -227,25 +239,30 @@ public class AdminService {
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
 
         ApplicationStatus newStatus = req.getStatus();
-        app.setStatus(newStatus);
-        app.setReviewedAt(LocalDateTime.now());
 
         if (req.getRewardPaidAmount() != null) {
             app.setRewardPaidAmount(req.getRewardPaidAmount());
         }
         if (newStatus == ApplicationStatus.SETTLED) {
-            app.setSettledAt(LocalDateTime.now());
+            // 예치금이 지급 가능한 상태인지 먼저 검증. 지급 실패 시 상태 전이가 일어나지 않도록
+            // release() 호출 후에만 SETTLED / settledAt 을 확정한다.
             Campaign campaign = campaignRepository.findById(app.getCampaignId())
                     .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-            Integer payout = app.getRewardPaidAmount() != null ? app.getRewardPaidAmount() : campaign.getRewardAmount();
-            if (campaign.getEscrowStatus() == EscrowStatus.FUNDED
-                    || campaign.getEscrowStatus() == EscrowStatus.PARTIALLY_RELEASED) {
-                escrowService.release(campaign.getId(), app.getId(), payout);
+            if (campaign.getEscrowStatus() != EscrowStatus.FUNDED
+                    && campaign.getEscrowStatus() != EscrowStatus.PARTIALLY_RELEASED) {
+                throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
             }
+            Integer payout = app.getRewardPaidAmount() != null
+                    ? app.getRewardPaidAmount()
+                    : campaign.getRewardAmount();
+            escrowService.release(campaign.getId(), app.getId(), payout);
             if (app.getRewardPaidAmount() == null) {
                 app.setRewardPaidAmount(payout);
             }
+            app.setSettledAt(LocalDateTime.now());
         }
+        app.setStatus(newStatus);
+        app.setReviewedAt(LocalDateTime.now());
         applicationRepository.save(app);
 
         if (newStatus == ApplicationStatus.APPROVED || newStatus == ApplicationStatus.REJECTED) {
