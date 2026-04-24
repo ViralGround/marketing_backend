@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,4 +54,11 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
     List<Campaign> findByCreatedByIdOrderByCreatedAtDesc(Integer createdById);
 
     List<Campaign> findByEscrowStatusOrderByDepositRequestedAtAsc(EscrowStatus escrowStatus);
+
+    /**
+     * 관리자 예치금 페이지용. PENDING_DEPOSIT 은 depositRequestedAt 이 null 이므로
+     * 먼저 depositRequestedAt 순으로 정렬한 뒤 createdAt 으로 안정화한다.
+     */
+    List<Campaign> findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(
+            Collection<EscrowStatus> escrowStatuses);
 }
