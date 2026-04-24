@@ -16,7 +16,7 @@ public class MemberDetailResponse {
     private final String status;
     private final Boolean emailVerified;
     private final LocalDateTime createdAt;
-    private final ProfileInfo profile;
+    private final ProfileInfo creatorProfile;
     private final long applicationCount;
 
     public MemberDetailResponse(Member m, CreatorProfile p, long appCount) {
@@ -28,7 +28,7 @@ public class MemberDetailResponse {
         this.emailVerified = m.getEmailVerified();
         this.createdAt = m.getCreatedAt();
         this.applicationCount = appCount;
-        this.profile = p != null ? new ProfileInfo(p) : null;
+        this.creatorProfile = p != null ? new ProfileInfo(p) : null;
     }
 
     public record ProfileInfo(
