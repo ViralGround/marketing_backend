@@ -85,6 +85,17 @@ public class LocalFileStorage implements FileStorage {
         }
     }
 
+    @Override
+    public boolean exists(String fileKey) {
+        if (fileKey == null || fileKey.isBlank()) return false;
+        try {
+            return Files.exists(resolve(fileKey));
+        } catch (AppException e) {
+            // path traversal 등 resolve 검증 실패 시 존재하지 않는 것으로 간주
+            return false;
+        }
+    }
+
     /**
      * 로컬 구현 전용 업로드 수신. 서명·콘텐츠 타입·용량을 검증하고 디스크에 저장.
      */

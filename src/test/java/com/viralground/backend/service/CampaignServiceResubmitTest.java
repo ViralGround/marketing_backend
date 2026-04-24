@@ -11,6 +11,7 @@ import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.storage.FileStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,7 @@ class CampaignServiceResubmitTest {
     @Mock EmailService emailService;
     @Mock MemberRepository memberRepository;
     @Mock ApplicationSubmissionRepository submissionRepository;
+    @Mock FileStorage fileStorage;
 
     @InjectMocks
     CampaignService campaignService;
@@ -54,6 +56,7 @@ class CampaignServiceResubmitTest {
     void should_ApplicationSubmission_이력_저장_when_영상_제출() {
         // given
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(fileStorage.exists("submissions/a.mp4")).thenReturn(true);
         SubmitWorkRequest req = new SubmitWorkRequest(null, "submissions/a.mp4", "video/mp4", 1024L);
 
         // when
@@ -74,6 +77,7 @@ class CampaignServiceResubmitTest {
         approvedApp.setStatus(ApplicationStatus.CHANGES_REQUESTED);
         approvedApp.setResubmissionCount(1);
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(fileStorage.exists("submissions/v2.mp4")).thenReturn(true);
         SubmitWorkRequest req = new SubmitWorkRequest(null, "submissions/v2.mp4", "video/mp4", 2048L);
 
         // when
@@ -119,6 +123,7 @@ class CampaignServiceResubmitTest {
         approvedApp.setStatus(ApplicationStatus.CHANGES_REQUESTED);
         approvedApp.setReviewComment("로고 노출 부족");
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(fileStorage.exists("submissions/v.mp4")).thenReturn(true);
         SubmitWorkRequest req = new SubmitWorkRequest(null, "submissions/v.mp4", "video/mp4", 1L);
 
         // when

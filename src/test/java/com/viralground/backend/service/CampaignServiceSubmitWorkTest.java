@@ -9,6 +9,7 @@ import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.storage.FileStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +40,8 @@ class CampaignServiceSubmitWorkTest {
     MemberRepository memberRepository;
     @Mock
     ApplicationSubmissionRepository submissionRepository;
+    @Mock
+    FileStorage fileStorage;
 
     @InjectMocks
     CampaignService campaignService;
@@ -58,6 +62,7 @@ class CampaignServiceSubmitWorkTest {
     void should_영상파일키_저장_SUBMITTED_상태_when_videoFileKey_제출() {
         // given
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(fileStorage.exists("submissions/abc.mp4")).thenReturn(true);
         SubmitWorkRequest req = new SubmitWorkRequest(
                 null, "submissions/abc.mp4", "video/mp4", 1024L);
 
@@ -154,5 +159,20 @@ class CampaignServiceSubmitWorkTest {
         assertThatThrownBy(() -> campaignService.submitWork(42, 7, req))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.VIDEO_TOO_LARGE);
+    }
+
+    @Test
+    void should_SUBMISSION_NOT_FOUND_예외_when_videoFileKey_파일이_존재하지_않음() {
+        // given — 클라이언트가 presign 만 받고 실제 업로드 없이 key 를 제출하거나 임의 문자열을 보낸 케이스
+        when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(fileStorage.exists(anyString())).thenReturn(false);
+        SubmitWorkRequest req = new SubmitWorkRequest(
+                null, "submissions/does-not-exist.mp4", "video/mp4", 1024L);
+
+        // when & then
+        assertThatThrownBy(() -> campaignService.submitWork(42, 7, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SUBMISSION_NOT_FOUND);
+        verify(applicationRepository, org.mockito.Mockito.never()).save(any());
     }
 }

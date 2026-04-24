@@ -11,4 +11,10 @@ public interface FileStorage {
     String signedDownloadUrl(String fileKey);
 
     void delete(String fileKey);
+
+    /**
+     * 해당 키의 파일이 실제로 업로드되어 존재하는지 확인.
+     * submitWork 시 클라이언트가 임의의 문자열을 fileKey 로 보내도 빈 파일 참조가 저장되지 않게 막는다.
+     */
+    boolean exists(String fileKey);
 }

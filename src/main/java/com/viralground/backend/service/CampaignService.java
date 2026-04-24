@@ -7,6 +7,7 @@ import com.viralground.backend.entity.*;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
+import com.viralground.backend.storage.FileStorage;
 
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class CampaignService {
     private final EmailService emailService;
     private final MemberRepository memberRepository;
     private final ApplicationSubmissionRepository submissionRepository;
+    private final FileStorage fileStorage;
 
     @Transactional(readOnly = true)
     public List<CampaignResponse> getOpenCampaigns(String sort, String search, Integer creatorId) {
@@ -139,6 +141,11 @@ public class CampaignService {
             }
             if (request.videoSizeBytes() == null || request.videoSizeBytes() <= 0) {
                 throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+            }
+            // presign 만 받고 실제 업로드를 누락했거나 타인의 키를 추측한 케이스 차단.
+            // 현 단계에서는 파일 존재 여부만 검사한다 (업로드 주체 귀속은 추후 업로드 이력 테이블로 강화).
+            if (!fileStorage.exists(request.videoFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
             }
             app.setVideoFileKey(request.videoFileKey());
             app.setVideoContentType(request.videoContentType());
