@@ -13,6 +13,7 @@ public class ApplicationResponse {
     private final String status;
     private final String message;
     private final String submissionUrl;
+    private final String videoFileKey;
     private final Integer rewardPaidAmount;
     private final LocalDateTime appliedAt;
     private final CampaignInfo campaign;
@@ -23,6 +24,7 @@ public class ApplicationResponse {
         this.status = a.getStatus().name();
         this.message = a.getMessage();
         this.submissionUrl = a.getSubmissionUrl();
+        this.videoFileKey = a.getVideoFileKey();
         this.rewardPaidAmount = a.getRewardPaidAmount();
         this.appliedAt = a.getAppliedAt();
         this.campaign = a.getCampaign() != null ? new CampaignInfo(a) : null;

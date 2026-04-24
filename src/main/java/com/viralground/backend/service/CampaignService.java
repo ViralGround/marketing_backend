@@ -2,6 +2,7 @@ package com.viralground.backend.service;
 
 import com.viralground.backend.dto.campaign.ApplicationResponse;
 import com.viralground.backend.dto.campaign.CampaignResponse;
+import com.viralground.backend.dto.campaign.SubmitWorkRequest;
 import com.viralground.backend.entity.*;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
@@ -104,7 +105,7 @@ public class CampaignService {
     }
 
     @Transactional
-    public void submitWork(Integer applicationId, Integer creatorId, String submissionUrl) {
+    public void submitWork(Integer applicationId, Integer creatorId, SubmitWorkRequest request) {
         CampaignApplication app = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
 
@@ -112,7 +113,29 @@ public class CampaignService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        app.setSubmissionUrl(submissionUrl);
+        boolean hasFile = request != null && request.videoFileKey() != null && !request.videoFileKey().isBlank();
+        boolean hasUrl = request != null && request.submissionUrl() != null && !request.submissionUrl().isBlank();
+        if (!hasFile && !hasUrl) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+
+        if (hasFile) {
+            if (request.videoContentType() == null || request.videoContentType().isBlank()) {
+                throw new AppException(ErrorCode.INVALID_VIDEO_FORMAT);
+            }
+            if (request.videoSizeBytes() == null || request.videoSizeBytes() <= 0) {
+                throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+            }
+            app.setVideoFileKey(request.videoFileKey());
+            app.setVideoContentType(request.videoContentType());
+            app.setVideoSizeBytes(request.videoSizeBytes());
+            app.setSubmissionUrl(null);
+        } else {
+            app.setSubmissionUrl(request.submissionUrl());
+            app.setVideoFileKey(null);
+            app.setVideoContentType(null);
+            app.setVideoSizeBytes(null);
+        }
         app.setStatus(ApplicationStatus.SUBMITTED);
         app.setSubmittedAt(LocalDateTime.now());
         applicationRepository.save(app);

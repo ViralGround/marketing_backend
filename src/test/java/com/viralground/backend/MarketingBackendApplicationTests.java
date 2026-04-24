@@ -13,7 +13,10 @@ import org.springframework.test.context.TestPropertySource;
         "resend.api-key=test",
         "app.url=http://localhost:3000",
         "app.admin-emails=",
-        "cors.allowed-origins=http://localhost:3000"
+        "cors.allowed-origins=http://localhost:3000",
+        "files.storage=local",
+        "files.public-base-url=http://localhost:8080",
+        "files.local.directory=./build/test-uploads"
 })
 class MarketingBackendApplicationTests {
 

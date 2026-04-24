@@ -33,7 +33,12 @@ public enum ErrorCode {
     INSUFFICIENT_ESCROW_BALANCE("INSUFFICIENT_ESCROW_BALANCE", "예치금 잔액이 부족합니다", HttpStatus.BAD_REQUEST),
     INVALID_CAMPAIGN_INPUT("INVALID_CAMPAIGN_INPUT", "캠페인 입력값이 올바르지 않습니다", HttpStatus.BAD_REQUEST),
     RATE_LIMIT_EXCEEDED("RATE_LIMIT_EXCEEDED", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
-    EMAIL_SEND_FAILED("EMAIL_SEND_FAILED", "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE);
+    EMAIL_SEND_FAILED("EMAIL_SEND_FAILED", "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
+    INVALID_VIDEO_FORMAT("INVALID_VIDEO_FORMAT", "지원하지 않는 영상 형식입니다. mp4, mov, webm 파일만 업로드할 수 있어요.", HttpStatus.BAD_REQUEST),
+    VIDEO_TOO_LARGE("VIDEO_TOO_LARGE", "업로드 가능한 영상 용량을 초과했습니다.", HttpStatus.BAD_REQUEST),
+    SUBMISSION_NOT_FOUND("SUBMISSION_NOT_FOUND", "영상 파일을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    INVALID_SIGNATURE("INVALID_SIGNATURE", "유효하지 않은 서명입니다.", HttpStatus.UNAUTHORIZED),
+    EXPIRED_SIGNATURE("EXPIRED_SIGNATURE", "서명이 만료되었습니다. 다시 요청해주세요.", HttpStatus.UNAUTHORIZED);
 
     private final String code;
     private final String message;

@@ -3,6 +3,7 @@ package com.viralground.backend.controller;
 import com.viralground.backend.config.AuthUser;
 import com.viralground.backend.dto.campaign.ApplicationResponse;
 import com.viralground.backend.dto.campaign.CampaignResponse;
+import com.viralground.backend.dto.campaign.SubmitWorkRequest;
 import com.viralground.backend.dto.profile.UpdateProfileRequest;
 import com.viralground.backend.service.CampaignService;
 import com.viralground.backend.service.ProfileService;
@@ -61,9 +62,9 @@ public class CampaignController {
     @PostMapping("/me/applications/{id}/submit")
     public ResponseEntity<Map<String, String>> submitWork(
             @PathVariable Integer id,
-            @RequestBody Map<String, String> body,
+            @RequestBody SubmitWorkRequest body,
             @AuthenticationPrincipal AuthUser authUser) {
-        campaignService.submitWork(id, authUser.getId(), body.get("submissionUrl"));
+        campaignService.submitWork(id, authUser.getId(), body);
         return ResponseEntity.ok(Map.of("message", "제출이 완료되었습니다."));
     }
 

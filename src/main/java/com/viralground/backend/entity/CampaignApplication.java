@@ -36,6 +36,15 @@ public class CampaignApplication {
     @Column(name = "submission_url")
     private String submissionUrl;
 
+    @Column(name = "video_file_key")
+    private String videoFileKey;
+
+    @Column(name = "video_content_type")
+    private String videoContentType;
+
+    @Column(name = "video_size_bytes")
+    private Long videoSizeBytes;
+
     @Column(name = "reward_paid_amount")
     private Integer rewardPaidAmount;
 

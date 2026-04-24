@@ -58,6 +58,17 @@ admin:
 cors:
   allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
 
+files:
+  # 스토리지 구현: local | s3 (운영 전환 시 s3 로)
+  storage: ${FILES_STORAGE:local}
+  # 프리사인 URL 베이스. 프록시 뒤에서는 실제 공개 URL 로 교체.
+  public-base-url: ${FILES_PUBLIC_BASE_URL:http://localhost:8080}
+  max-size-bytes: ${FILES_MAX_SIZE_BYTES:524288000}
+  allowed-content-types: video/mp4,video/quicktime,video/webm
+  signing-ttl-seconds: ${FILES_SIGNING_TTL:900}
+  local:
+    directory: ${FILES_LOCAL_DIR:./uploads}
+
 sentry:
   dsn: ${SENTRY_DSN:}
   environment: ${SENTRY_ENV:local}
