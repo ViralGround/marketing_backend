@@ -139,6 +139,7 @@ public class AdminService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public CampaignDetailResponse getCampaign(Integer id) {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
