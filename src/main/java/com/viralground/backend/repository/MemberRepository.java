@@ -2,6 +2,7 @@ package com.viralground.backend.repository;
 
 import com.viralground.backend.entity.Member;
 import com.viralground.backend.entity.MemberStatus;
+import com.viralground.backend.entity.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,6 +18,8 @@ public interface MemberRepository extends JpaRepository<Member, Integer> {
     boolean existsByEmail(String email);
 
     long countByCreatedAtAfter(LocalDateTime createdAt);
+
+    long countByRoleAndStatus(Role role, MemberStatus status);
 
     @Query("""
             SELECT m FROM Member m

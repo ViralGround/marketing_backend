@@ -227,33 +227,28 @@ public class AdminService {
     /** 관리자 대시보드 KPI. 플랫폼 전체 거래·완료율·누적 성과를 집계. */
     @Transactional(readOnly = true)
     public Map<String, Object> getKpi() {
-        long gmv = escrowTransactionRepository.findAll().stream()
-                .filter(t -> t.getType() == EscrowTxType.DEPOSIT)
-                .mapToLong(t -> t.getAmount() != null ? t.getAmount() : 0L)
-                .sum();
-        long released = escrowTransactionRepository.findAll().stream()
-                .filter(t -> t.getType() == EscrowTxType.RELEASE)
-                .mapToLong(t -> t.getAmount() != null ? t.getAmount() : 0L)
-                .sum();
-        long refunded = escrowTransactionRepository.findAll().stream()
-                .filter(t -> t.getType() == EscrowTxType.REFUND)
-                .mapToLong(t -> t.getAmount() != null ? t.getAmount() : 0L)
-                .sum();
+        Map<EscrowTxType, Long> escrowByType = new java.util.EnumMap<>(EscrowTxType.class);
+        for (Object[] row : escrowTransactionRepository.sumAmountByType()) {
+            escrowByType.put((EscrowTxType) row[0], ((Number) row[1]).longValue());
+        }
+        long gmv = escrowByType.getOrDefault(EscrowTxType.DEPOSIT, 0L);
+        long released = escrowByType.getOrDefault(EscrowTxType.RELEASE, 0L);
+        long refunded = escrowByType.getOrDefault(EscrowTxType.REFUND, 0L);
 
-        long totalCreators = memberRepository.findAllByStatusAndSearch(null, null).stream()
-                .filter(m -> m.getRole() == Role.CREATOR && m.getStatus() == MemberStatus.APPROVED).count();
-        long totalCompanies = memberRepository.findAllByStatusAndSearch(null, null).stream()
-                .filter(m -> m.getRole() == Role.COMPANY && m.getStatus() == MemberStatus.APPROVED).count();
+        long totalCreators = memberRepository.countByRoleAndStatus(Role.CREATOR, MemberStatus.APPROVED);
+        long totalCompanies = memberRepository.countByRoleAndStatus(Role.COMPANY, MemberStatus.APPROVED);
         long openCampaigns = campaignRepository.findAllByStatus(CampaignStatus.OPEN).size();
 
-        List<CampaignApplication> allApps = applicationRepository.findAll();
-        long reachedReviewStage = allApps.stream()
-                .filter(a -> a.getStatus() != ApplicationStatus.PENDING
-                        && a.getStatus() != ApplicationStatus.REJECTED)
-                .count();
-        long completed = allApps.stream()
-                .filter(a -> a.getStatus() == ApplicationStatus.SETTLED).count();
-        double matchingRate = allApps.isEmpty() ? 0.0 : (double) reachedReviewStage / allApps.size();
+        Map<ApplicationStatus, Long> appsByStatus = new java.util.EnumMap<>(ApplicationStatus.class);
+        for (Object[] row : applicationRepository.countByStatusGrouped()) {
+            appsByStatus.put((ApplicationStatus) row[0], ((Number) row[1]).longValue());
+        }
+        long totalApps = appsByStatus.values().stream().mapToLong(Long::longValue).sum();
+        long pending = appsByStatus.getOrDefault(ApplicationStatus.PENDING, 0L);
+        long rejected = appsByStatus.getOrDefault(ApplicationStatus.REJECTED, 0L);
+        long reachedReviewStage = totalApps - pending - rejected;
+        long completed = appsByStatus.getOrDefault(ApplicationStatus.SETTLED, 0L);
+        double matchingRate = totalApps == 0 ? 0.0 : (double) reachedReviewStage / totalApps;
         double completionRate = reachedReviewStage == 0 ? 0.0 : (double) completed / reachedReviewStage;
 
         Object[] sums = metricRepository.sumAll();
@@ -262,9 +257,7 @@ public class AdminService {
         long totalComments = sums.length > 2 && sums[2] instanceof Number n ? n.longValue() : 0;
 
         long reviewCount = reviewRepository.count();
-        double avgRating = reviewRepository.findAll().stream()
-                .mapToInt(r -> r.getRating() == null ? 0 : r.getRating())
-                .average().orElse(0.0);
+        double avgRating = reviewRepository.averageRating();
 
         return Map.of(
                 "gmv", gmv,

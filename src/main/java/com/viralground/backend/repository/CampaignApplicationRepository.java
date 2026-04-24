@@ -36,6 +36,10 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
 
     long countByCampaignId(Integer campaignId);
 
+    /** status 별 지원 수. KPI 대시보드의 매칭률·완료율 집계용. */
+    @Query("SELECT a.status, COUNT(a) FROM CampaignApplication a GROUP BY a.status")
+    List<Object[]> countByStatusGrouped();
+
     @Query("""
             SELECT a.campaignId AS campaignId, COUNT(a) AS count
             FROM CampaignApplication a
