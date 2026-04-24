@@ -28,6 +28,13 @@ public class AdminController {
     private final AdminService adminService;
     private final EscrowService escrowService;
 
+    // ── 대시보드 KPI ──────────────────────────────────
+
+    @GetMapping("/dashboard/kpi")
+    ResponseEntity<Map<String, Object>> getKpi() {
+        return ResponseEntity.ok(adminService.getKpi());
+    }
+
     // ── 회원 관리 ──────────────────────────────────
 
     @GetMapping("/members")

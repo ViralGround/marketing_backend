@@ -41,7 +41,8 @@ public enum ErrorCode {
     EXPIRED_SIGNATURE("EXPIRED_SIGNATURE", "서명이 만료되었습니다. 다시 요청해주세요.", HttpStatus.UNAUTHORIZED),
     REVIEW_NOT_ALLOWED_YET("REVIEW_NOT_ALLOWED_YET", "정산 완료 후에만 리뷰를 남길 수 있습니다.", HttpStatus.BAD_REQUEST),
     REVIEW_ALREADY_EXISTS("REVIEW_ALREADY_EXISTS", "이미 리뷰를 작성했습니다.", HttpStatus.CONFLICT),
-    INVALID_RATING("INVALID_RATING", "평점은 1~5 사이여야 합니다.", HttpStatus.BAD_REQUEST);
+    INVALID_RATING("INVALID_RATING", "평점은 1~5 사이여야 합니다.", HttpStatus.BAD_REQUEST),
+    METRIC_FORBIDDEN("METRIC_FORBIDDEN", "정산 완료된 작업에만 성과를 입력할 수 있습니다.", HttpStatus.FORBIDDEN);
 
     private final String code;
     private final String message;

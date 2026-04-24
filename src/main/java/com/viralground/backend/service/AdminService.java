@@ -10,6 +10,8 @@ import com.viralground.backend.event.ApplicationResultEvent;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
+import com.viralground.backend.repository.ReviewRepository;
+import com.viralground.backend.repository.SubmissionMetricRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,8 @@ public class AdminService {
     private final EscrowService escrowService;
     private final ApplicationSubmissionRepository submissionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ReviewRepository reviewRepository;
+    private final SubmissionMetricRepository metricRepository;
 
     // ── 회원 관리 ──────────────────────────────────
 
@@ -218,6 +222,66 @@ public class AdminService {
     public void deleteCampaign(Integer id) {
         campaignRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         campaignRepository.deleteById(id);
+    }
+
+    /** 관리자 대시보드 KPI. 플랫폼 전체 거래·완료율·누적 성과를 집계. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getKpi() {
+        long gmv = escrowTransactionRepository.findAll().stream()
+                .filter(t -> t.getType() == EscrowTxType.DEPOSIT)
+                .mapToLong(t -> t.getAmount() != null ? t.getAmount() : 0L)
+                .sum();
+        long released = escrowTransactionRepository.findAll().stream()
+                .filter(t -> t.getType() == EscrowTxType.RELEASE)
+                .mapToLong(t -> t.getAmount() != null ? t.getAmount() : 0L)
+                .sum();
+        long refunded = escrowTransactionRepository.findAll().stream()
+                .filter(t -> t.getType() == EscrowTxType.REFUND)
+                .mapToLong(t -> t.getAmount() != null ? t.getAmount() : 0L)
+                .sum();
+
+        long totalCreators = memberRepository.findAllByStatusAndSearch(null, null).stream()
+                .filter(m -> m.getRole() == Role.CREATOR && m.getStatus() == MemberStatus.APPROVED).count();
+        long totalCompanies = memberRepository.findAllByStatusAndSearch(null, null).stream()
+                .filter(m -> m.getRole() == Role.COMPANY && m.getStatus() == MemberStatus.APPROVED).count();
+        long openCampaigns = campaignRepository.findAllByStatus(CampaignStatus.OPEN).size();
+
+        List<CampaignApplication> allApps = applicationRepository.findAll();
+        long reachedReviewStage = allApps.stream()
+                .filter(a -> a.getStatus() != ApplicationStatus.PENDING
+                        && a.getStatus() != ApplicationStatus.REJECTED)
+                .count();
+        long completed = allApps.stream()
+                .filter(a -> a.getStatus() == ApplicationStatus.SETTLED).count();
+        double matchingRate = allApps.isEmpty() ? 0.0 : (double) reachedReviewStage / allApps.size();
+        double completionRate = reachedReviewStage == 0 ? 0.0 : (double) completed / reachedReviewStage;
+
+        Object[] sums = metricRepository.sumAll();
+        long totalViews = sums.length > 0 && sums[0] instanceof Number n ? n.longValue() : 0;
+        long totalLikes = sums.length > 1 && sums[1] instanceof Number n ? n.longValue() : 0;
+        long totalComments = sums.length > 2 && sums[2] instanceof Number n ? n.longValue() : 0;
+
+        long reviewCount = reviewRepository.count();
+        double avgRating = reviewRepository.findAll().stream()
+                .mapToInt(r -> r.getRating() == null ? 0 : r.getRating())
+                .average().orElse(0.0);
+
+        return Map.of(
+                "gmv", gmv,
+                "released", released,
+                "refunded", refunded,
+                "activeCreators", totalCreators,
+                "activeCompanies", totalCompanies,
+                "openCampaigns", openCampaigns,
+                "matchingRate", Math.round(matchingRate * 1000) / 10.0,
+                "completionRate", Math.round(completionRate * 1000) / 10.0,
+                "contentMetrics", Map.of(
+                        "views", totalViews,
+                        "likes", totalLikes,
+                        "comments", totalComments),
+                "reviews", Map.of(
+                        "count", reviewCount,
+                        "averageRating", Math.round(avgRating * 10) / 10.0));
     }
 
     public List<Map<String, Object>> getPendingEscrowCampaigns() {
