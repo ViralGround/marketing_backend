@@ -9,6 +9,7 @@ import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.SubmissionMetricRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +41,16 @@ public class MetricsService {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
 
+        try {
+            return saveMetric(applicationId, req);
+        } catch (DataIntegrityViolationException e) {
+            // 동시 요청이 먼저 row 를 만든 경우: 재시도 시에는 find 가 기존 row 를 반환하므로
+            // update 경로로 들어간다. 두 번째 시도에서도 실패하면 상위로 전파.
+            return saveMetric(applicationId, req);
+        }
+    }
+
+    private SubmissionMetric saveMetric(Integer applicationId, UpsertMetricRequest req) {
         SubmissionMetric metric = metricRepository.findByApplicationId(applicationId)
                 .orElseGet(() -> SubmissionMetric.builder().applicationId(applicationId).build());
         metric.setViews(req.getViews());
@@ -47,7 +58,7 @@ public class MetricsService {
         metric.setComments(req.getComments());
         metric.setExternalUrl(req.getExternalUrl());
         metric.setRecordedAt(LocalDateTime.now());
-        return metricRepository.save(metric);
+        return metricRepository.saveAndFlush(metric);
     }
 
     private static boolean isSafeHttpUrl(String raw) {
