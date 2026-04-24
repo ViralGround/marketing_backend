@@ -10,5 +10,8 @@ public interface ApplicationSubmissionRepository extends JpaRepository<Applicati
 
     List<ApplicationSubmission> findByApplicationIdOrderBySubmittedAtAsc(Integer applicationId);
 
+    /** 캠페인 상세 화면의 제출 이력 N+1 방지용 벌크 조회. applicationId 기준 그룹화에 사용. */
+    List<ApplicationSubmission> findByApplicationIdInOrderByApplicationIdAscSubmittedAtAsc(List<Integer> applicationIds);
+
     Optional<ApplicationSubmission> findTopByApplicationIdOrderBySubmittedAtDesc(Integer applicationId);
 }

@@ -98,16 +98,22 @@ public class CompanyService {
                     .stream()
                     .collect(Collectors.toMap(Member::getId, m -> m));
 
+        List<Integer> appIds = apps.stream().map(CampaignApplication::getId).toList();
+        Map<Integer, List<SubmissionHistoryItem>> historyByAppId = appIds.isEmpty()
+                ? Map.of()
+                : submissionRepository
+                        .findByApplicationIdInOrderByApplicationIdAscSubmittedAtAsc(appIds).stream()
+                        .collect(Collectors.groupingBy(
+                                ApplicationSubmission::getApplicationId,
+                                Collectors.mapping(SubmissionHistoryItem::from, Collectors.toList())));
+
         List<CompanyCampaignResponse.ApplicationItem> applicationItems = apps.stream()
                 .map(a -> {
                     Member cr = creatorById.get(a.getCreatorId());
                     CompanyCampaignResponse.CreatorInfo info = cr == null
                             ? new CompanyCampaignResponse.CreatorInfo(a.getCreatorId(), "(알 수 없음)", "")
                             : new CompanyCampaignResponse.CreatorInfo(cr.getId(), cr.getName(), cr.getEmail());
-                    List<SubmissionHistoryItem> history = submissionRepository
-                            .findByApplicationIdOrderBySubmittedAtAsc(a.getId()).stream()
-                            .map(SubmissionHistoryItem::from)
-                            .toList();
+                    List<SubmissionHistoryItem> history = historyByAppId.getOrDefault(a.getId(), List.of());
                     return new CompanyCampaignResponse.ApplicationItem(
                             a.getId(),
                             a.getStatus(),

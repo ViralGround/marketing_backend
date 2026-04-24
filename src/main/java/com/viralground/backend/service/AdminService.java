@@ -137,12 +137,17 @@ public class AdminService {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         List<CampaignApplication> apps = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id);
+        List<Integer> appIds = apps.stream().map(CampaignApplication::getId).toList();
         java.util.Map<Integer, java.util.List<com.viralground.backend.dto.campaign.SubmissionHistoryItem>> byAppId =
-                apps.stream().collect(java.util.stream.Collectors.toMap(
-                        CampaignApplication::getId,
-                        a -> submissionRepository.findByApplicationIdOrderBySubmittedAtAsc(a.getId()).stream()
-                                .map(com.viralground.backend.dto.campaign.SubmissionHistoryItem::from)
-                                .toList()));
+                appIds.isEmpty()
+                        ? java.util.Map.of()
+                        : submissionRepository
+                                .findByApplicationIdInOrderByApplicationIdAscSubmittedAtAsc(appIds).stream()
+                                .collect(java.util.stream.Collectors.groupingBy(
+                                        com.viralground.backend.entity.ApplicationSubmission::getApplicationId,
+                                        java.util.stream.Collectors.mapping(
+                                                com.viralground.backend.dto.campaign.SubmissionHistoryItem::from,
+                                                java.util.stream.Collectors.toList())));
         return new CampaignDetailResponse(campaign, apps, byAppId);
     }
 
