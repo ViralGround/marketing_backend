@@ -11,11 +11,13 @@ import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.repository.ReviewRepository;
+import com.viralground.backend.repository.SubmissionMetricRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -28,6 +30,7 @@ public class PortfolioService {
     private final CampaignApplicationRepository applicationRepository;
     private final CampaignRepository campaignRepository;
     private final ReviewRepository reviewRepository;
+    private final SubmissionMetricRepository metricRepository;
 
     @Transactional(readOnly = true)
     public Map<String, Object> getPortfolio(Integer creatorId) {
@@ -66,10 +69,23 @@ public class PortfolioService {
                 ? 0.0
                 : received.stream().mapToInt(Review::getRating).average().orElse(0.0);
 
-        Map<String, Object> summary = Map.of(
-                "totalCompleted", settled.size(),
-                "reviewCount", received.size(),
-                "averageRating", Math.round(avgRating * 10) / 10.0);
+        // 성과 집계: SETTLED 지원의 metric 합계. 기업이 승인 전 퍼포먼스를 가늠하는 핵심 근거.
+        Object[] metricSum = metricRepository.sumByCreatorId(creatorId);
+        long totalViews = metricSum.length > 0 && metricSum[0] instanceof Number n ? n.longValue() : 0L;
+        long totalLikes = metricSum.length > 1 && metricSum[1] instanceof Number n ? n.longValue() : 0L;
+        long totalComments = metricSum.length > 2 && metricSum[2] instanceof Number n ? n.longValue() : 0L;
+        long sampleSize = metricSum.length > 3 && metricSum[3] instanceof Number n ? n.longValue() : 0L;
+        long averageViews = sampleSize == 0 ? 0L : totalViews / sampleSize;
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalCompleted", settled.size());
+        summary.put("reviewCount", received.size());
+        summary.put("averageRating", Math.round(avgRating * 10) / 10.0);
+        summary.put("totalViews", totalViews);
+        summary.put("totalLikes", totalLikes);
+        summary.put("totalComments", totalComments);
+        summary.put("metricSampleSize", sampleSize);
+        summary.put("averageViews", averageViews);
 
         Map<String, Object> creatorInfo = Map.of(
                 "id", creator.getId(),
