@@ -37,6 +37,15 @@ public class LocalFileStorage implements FileStorage {
             "video/webm", "webm"
     );
 
+    private static final Map<String, String> EXT_BY_IMAGE_TYPE = Map.of(
+            "image/jpeg", "jpg",
+            "image/png", "png",
+            "image/webp", "webp"
+    );
+
+    private static final String VIDEO_PREFIX = "submissions/";
+    private static final String IMAGE_PREFIX = "thumbnails/";
+
     private final FileStorageProperties props;
     private final Clock clock;
     private final String signingSecret;
@@ -53,6 +62,10 @@ public class LocalFileStorage implements FileStorage {
         return props.getMaxSizeBytes();
     }
 
+    public long getMaxImageSizeBytes() {
+        return props.getMaxImageSizeBytes();
+    }
+
     @PostConstruct
     void initDirectory() {
         try {
@@ -66,9 +79,19 @@ public class LocalFileStorage implements FileStorage {
     public PresignedUpload presignUpload(String contentType, long sizeBytes) {
         validateUpload(contentType, sizeBytes);
         String ext = EXT_BY_TYPE.get(contentType);
-        String fileKey = "submissions/" + UUID.randomUUID() + "." + ext;
-        Instant expires = clock.instant().plusSeconds(props.getSigningTtlSeconds());
+        return buildPresign(VIDEO_PREFIX, ext);
+    }
 
+    @Override
+    public PresignedUpload presignImageUpload(String contentType, long sizeBytes) {
+        validateImageUpload(contentType, sizeBytes);
+        String ext = EXT_BY_IMAGE_TYPE.get(contentType);
+        return buildPresign(IMAGE_PREFIX, ext);
+    }
+
+    private PresignedUpload buildPresign(String prefix, String ext) {
+        String fileKey = prefix + UUID.randomUUID() + "." + ext;
+        Instant expires = clock.instant().plusSeconds(props.getSigningTtlSeconds());
         String uploadUrl = buildSignedUrl("/files/upload/", fileKey, "PUT", expires);
         String downloadUrl = buildSignedUrl("/files/", fileKey, "GET", expires);
         return new PresignedUpload(fileKey, uploadUrl, downloadUrl, expires);
@@ -102,26 +125,34 @@ public class LocalFileStorage implements FileStorage {
 
     /**
      * 로컬 구현 전용 업로드 수신. 서명·콘텐츠 타입·용량을 검증하고 디스크에 저장.
+     * fileKey prefix 로 카테고리(영상/이미지)를 결정하여 룰을 분기.
      */
     public void acceptUpload(String fileKey, String sig, long exp, InputStream in,
                              String contentType, long sizeBytes) {
         verify(fileKey, "PUT", sig, exp);
-        validateUpload(contentType, sizeBytes);
+        boolean isImage = fileKey != null && fileKey.startsWith(IMAGE_PREFIX);
+        if (isImage) {
+            validateImageUpload(contentType, sizeBytes);
+        } else {
+            validateUpload(contentType, sizeBytes);
+        }
+        long maxBytes = isImage ? props.getMaxImageSizeBytes() : props.getMaxSizeBytes();
+        ErrorCode tooLarge = isImage ? ErrorCode.IMAGE_TOO_LARGE : ErrorCode.VIDEO_TOO_LARGE;
 
         Path target = resolve(fileKey);
         try {
             Files.createDirectories(target.getParent());
             // chunked 또는 Content-Length 위조로 본문이 상한을 넘는 경우 스트림을 즉시 끊는다.
-            try (InputStream limited = new BoundedInputStream(in, props.getMaxSizeBytes())) {
+            try (InputStream limited = new BoundedInputStream(in, maxBytes)) {
                 Files.copy(limited, target, StandardCopyOption.REPLACE_EXISTING);
             } catch (BoundedInputStream.LimitExceededException e) {
                 Files.deleteIfExists(target);
-                throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+                throw new AppException(tooLarge);
             }
             // 스트림 커트가 실패한 경우에 대비한 사후 검증 (이중 안전).
-            if (Files.size(target) > props.getMaxSizeBytes()) {
+            if (Files.size(target) > maxBytes) {
                 Files.deleteIfExists(target);
-                throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+                throw new AppException(tooLarge);
             }
         } catch (IOException e) {
             throw new IllegalStateException("파일 저장 실패: " + fileKey, e);
@@ -153,6 +184,16 @@ public class LocalFileStorage implements FileStorage {
         }
         if (sizeBytes <= 0 || sizeBytes > props.getMaxSizeBytes()) {
             throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+        }
+    }
+
+    private void validateImageUpload(String contentType, long sizeBytes) {
+        if (contentType == null || !props.getAllowedImageContentTypes().contains(contentType)
+                || !EXT_BY_IMAGE_TYPE.containsKey(contentType)) {
+            throw new AppException(ErrorCode.INVALID_IMAGE_FORMAT);
+        }
+        if (sizeBytes <= 0 || sizeBytes > props.getMaxImageSizeBytes()) {
+            throw new AppException(ErrorCode.IMAGE_TOO_LARGE);
         }
     }
 
@@ -217,6 +258,9 @@ public class LocalFileStorage implements FileStorage {
             case "mp4" -> "video/mp4";
             case "mov" -> "video/quicktime";
             case "webm" -> "video/webm";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "png" -> "image/png";
+            case "webp" -> "image/webp";
             default -> "application/octet-stream";
         };
     }

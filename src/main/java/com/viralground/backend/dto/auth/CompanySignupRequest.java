@@ -40,4 +40,9 @@ public class CompanySignupRequest {
     private String address;
     private String homepage;
     private String industry;
+
+    private boolean agreedTerms;
+    private boolean agreedPrivacy;
+    private boolean agreedAge14;
+    private boolean marketingOptIn;
 }

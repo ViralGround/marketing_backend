@@ -42,4 +42,10 @@ public class SignupRequest {
     private String instagramId;
     private String tiktokId;
     private String youtubeId;
+
+    private boolean agreedTerms;
+    private boolean agreedPrivacy;
+    private boolean agreedAge14;
+    private boolean agreedThirdParty;
+    private boolean marketingOptIn;
 }

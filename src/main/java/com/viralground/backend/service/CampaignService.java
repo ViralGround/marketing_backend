@@ -67,8 +67,16 @@ public class CampaignService {
                 .map(c -> new CampaignResponse(
                         c,
                         myApps.get(c.getId()),
-                        countByCampaignId.getOrDefault(c.getId(), 0L).intValue()))
+                        countByCampaignId.getOrDefault(c.getId(), 0L).intValue(),
+                        resolveThumbUrl(c)))
                 .toList();
+    }
+
+    private String resolveThumbUrl(Campaign c) {
+        if (c.getThumbnailFileKey() != null && !c.getThumbnailFileKey().isBlank()) {
+            return fileStorage.signedDownloadUrl(c.getThumbnailFileKey());
+        }
+        return c.getThumbnailUrl();
     }
 
     @Transactional(readOnly = true)
@@ -79,7 +87,7 @@ public class CampaignService {
                 ? applicationRepository.findByCampaignIdAndCreatorId(id, creatorId).orElse(null)
                 : null;
         int count = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id).size();
-        return new CampaignResponse(campaign, myApp, count);
+        return new CampaignResponse(campaign, myApp, count, resolveThumbUrl(campaign));
     }
 
     @Transactional

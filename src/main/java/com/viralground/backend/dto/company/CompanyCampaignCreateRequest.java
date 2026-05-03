@@ -29,7 +29,7 @@ public class CompanyCampaignCreateRequest {
     @Min(1)
     private Integer maxParticipants;
 
-    private String thumbnailUrl;
+    private String thumbnailFileKey;
     private String requirements;
     private LocalDateTime deadline;
 }

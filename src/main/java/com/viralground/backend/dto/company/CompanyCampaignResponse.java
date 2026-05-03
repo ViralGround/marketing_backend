@@ -29,16 +29,18 @@ public class CompanyCampaignResponse {
     private final LocalDateTime createdAt;
     private final Integer applicationCount;
     private final String requirements;
+    private final String thumbnailUrl;
     private final List<ApplicationItem> applications;
     private final List<EscrowTransactionItem> escrowTransactions;
 
-    public CompanyCampaignResponse(Campaign c, Integer applicationCount) {
-        this(c, applicationCount, List.of(), List.of());
+    public CompanyCampaignResponse(Campaign c, Integer applicationCount, String thumbnailUrl) {
+        this(c, applicationCount, List.of(), List.of(), thumbnailUrl);
     }
 
     public CompanyCampaignResponse(Campaign c, Integer applicationCount,
                                    List<ApplicationItem> applications,
-                                   List<EscrowTransactionItem> escrowTransactions) {
+                                   List<EscrowTransactionItem> escrowTransactions,
+                                   String thumbnailUrl) {
         this.id = c.getId();
         this.title = c.getTitle();
         this.description = c.getDescription();
@@ -54,6 +56,7 @@ public class CompanyCampaignResponse {
         this.createdAt = c.getCreatedAt();
         this.applicationCount = applicationCount;
         this.requirements = c.getRequirements();
+        this.thumbnailUrl = thumbnailUrl;
         this.applications = applications;
         this.escrowTransactions = escrowTransactions;
     }

@@ -14,7 +14,7 @@ public class CompanyCampaignUpdateRequest {
     private String brandName;
     private Integer rewardAmount;
     private Integer maxParticipants;
-    private String thumbnailUrl;
+    private String thumbnailFileKey;
     private String requirements;
     private LocalDateTime deadline;
 }

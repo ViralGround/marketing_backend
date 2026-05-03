@@ -12,6 +12,7 @@ import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
 import com.viralground.backend.repository.ReviewRepository;
 import com.viralground.backend.repository.SubmissionMetricRepository;
+import com.viralground.backend.storage.FileStorage;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,14 @@ public class AdminService {
     private final ApplicationEventPublisher eventPublisher;
     private final ReviewRepository reviewRepository;
     private final SubmissionMetricRepository metricRepository;
+    private final FileStorage fileStorage;
+
+    private String resolveThumbUrl(Campaign c) {
+        if (c.getThumbnailFileKey() != null && !c.getThumbnailFileKey().isBlank()) {
+            return fileStorage.signedDownloadUrl(c.getThumbnailFileKey());
+        }
+        return c.getThumbnailUrl();
+    }
 
     // ── 회원 관리 ──────────────────────────────────
 
@@ -155,7 +164,7 @@ public class AdminService {
                                         java.util.stream.Collectors.mapping(
                                                 com.viralground.backend.dto.campaign.SubmissionHistoryItem::from,
                                                 java.util.stream.Collectors.toList())));
-        return new CampaignDetailResponse(campaign, apps, byAppId);
+        return new CampaignDetailResponse(campaign, apps, byAppId, resolveThumbUrl(campaign));
     }
 
     @Transactional
@@ -168,6 +177,11 @@ public class AdminService {
 
         boolean immediatelyOpen = req.getImmediatelyOpen() == null || req.getImmediatelyOpen();
 
+        if (req.getThumbnailFileKey() != null && !req.getThumbnailFileKey().isBlank()
+                && !fileStorage.exists(req.getThumbnailFileKey())) {
+            throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+        }
+
         Campaign.CampaignBuilder builder = Campaign.builder()
                 .title(req.getTitle())
                 .description(req.getDescription())
@@ -175,7 +189,7 @@ public class AdminService {
                 .rewardAmount(req.getRewardAmount())
                 .maxParticipants(req.getMaxParticipants())
                 .totalBudget(totalBudget)
-                .thumbnailUrl(req.getThumbnailUrl())
+                .thumbnailFileKey(req.getThumbnailFileKey())
                 .requirements(req.getRequirements())
                 .deadline(req.getDeadline())
                 .createdById(adminId);
@@ -224,7 +238,12 @@ public class AdminService {
             c.setTotalBudget(c.getRewardAmount() * c.getMaxParticipants());
         }
 
-        if (req.getThumbnailUrl() != null) c.setThumbnailUrl(req.getThumbnailUrl());
+        if (req.getThumbnailFileKey() != null) {
+            if (!req.getThumbnailFileKey().isBlank() && !fileStorage.exists(req.getThumbnailFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
+            c.setThumbnailFileKey(req.getThumbnailFileKey().isBlank() ? null : req.getThumbnailFileKey());
+        }
         if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
         if (req.getStatus() != null) c.setStatus(req.getStatus());
         campaignRepository.save(c);

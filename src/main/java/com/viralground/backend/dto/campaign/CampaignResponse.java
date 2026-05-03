@@ -24,13 +24,13 @@ public class CampaignResponse {
     private final Integer applicationCount;
     private final ApplicationSummary myApplication;
 
-    public CampaignResponse(Campaign c, CampaignApplication myApp, int applicationCount) {
+    public CampaignResponse(Campaign c, CampaignApplication myApp, int applicationCount, String thumbnailUrl) {
         this.id = c.getId();
         this.title = c.getTitle();
         this.description = c.getDescription();
         this.brandName = c.getBrandName();
         this.rewardAmount = c.getRewardAmount();
-        this.thumbnailUrl = c.getThumbnailUrl();
+        this.thumbnailUrl = thumbnailUrl;
         this.requirements = c.getRequirements();
         this.deadline = c.getDeadline();
         this.maxParticipants = c.getMaxParticipants();

@@ -21,6 +21,7 @@ import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.EscrowTransactionRepository;
 import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.storage.FileStorage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -43,6 +44,14 @@ public class CompanyService {
     private final EscrowTransactionRepository escrowTransactionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ApplicationSubmissionRepository submissionRepository;
+    private final FileStorage fileStorage;
+
+    private String resolveThumbUrl(Campaign c) {
+        if (c.getThumbnailFileKey() != null && !c.getThumbnailFileKey().isBlank()) {
+            return fileStorage.signedDownloadUrl(c.getThumbnailFileKey());
+        }
+        return c.getThumbnailUrl();
+    }
 
     @Transactional
     public CompanyCampaignResponse createCampaign(Integer companyMemberId, CompanyCampaignCreateRequest req) {
@@ -51,6 +60,12 @@ public class CompanyService {
         }
         int totalBudget = req.getRewardAmount() * req.getMaxParticipants();
 
+        String thumbnailFileKey = req.getThumbnailFileKey();
+        if (thumbnailFileKey != null && !thumbnailFileKey.isBlank()
+                && !fileStorage.exists(thumbnailFileKey)) {
+            throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+        }
+
         Campaign saved = campaignRepository.save(Campaign.builder()
                 .title(req.getTitle())
                 .description(req.getDescription())
@@ -58,7 +73,7 @@ public class CompanyService {
                 .rewardAmount(req.getRewardAmount())
                 .maxParticipants(req.getMaxParticipants())
                 .totalBudget(totalBudget)
-                .thumbnailUrl(req.getThumbnailUrl())
+                .thumbnailFileKey(thumbnailFileKey)
                 .requirements(req.getRequirements())
                 .deadline(req.getDeadline())
                 .status(CampaignStatus.DRAFT)
@@ -66,7 +81,7 @@ public class CompanyService {
                 .createdById(companyMemberId)
                 .build());
 
-        return new CompanyCampaignResponse(saved, 0);
+        return new CompanyCampaignResponse(saved, 0, resolveThumbUrl(saved));
     }
 
     public List<CompanyCampaignResponse> listCampaigns(Integer companyMemberId) {
@@ -81,7 +96,8 @@ public class CompanyService {
 
         return campaigns.stream()
                 .map(c -> new CompanyCampaignResponse(c,
-                        countByCampaignId.getOrDefault(c.getId(), 0L).intValue()))
+                        countByCampaignId.getOrDefault(c.getId(), 0L).intValue(),
+                        resolveThumbUrl(c)))
                 .toList();
     }
 
@@ -141,7 +157,7 @@ public class CompanyService {
                                 tx.getCreatedAt()))
                         .toList();
 
-        return new CompanyCampaignResponse(c, apps.size(), applicationItems, escrowItems);
+        return new CompanyCampaignResponse(c, apps.size(), applicationItems, escrowItems, resolveThumbUrl(c));
     }
 
     public Map<String, Object> getDashboardSummary(Integer companyMemberId) {
@@ -166,7 +182,12 @@ public class CompanyService {
         if (req.getTitle() != null) c.setTitle(req.getTitle());
         if (req.getDescription() != null) c.setDescription(req.getDescription());
         if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
-        if (req.getThumbnailUrl() != null) c.setThumbnailUrl(req.getThumbnailUrl());
+        if (req.getThumbnailFileKey() != null) {
+            if (!req.getThumbnailFileKey().isBlank() && !fileStorage.exists(req.getThumbnailFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
+            c.setThumbnailFileKey(req.getThumbnailFileKey().isBlank() ? null : req.getThumbnailFileKey());
+        }
         if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
         if (req.getDeadline() != null) c.setDeadline(req.getDeadline());
 
@@ -191,7 +212,9 @@ public class CompanyService {
         }
 
         Campaign saved = campaignRepository.save(c);
-        return new CompanyCampaignResponse(saved, (int) applicationRepository.countByCampaignId(saved.getId()));
+        return new CompanyCampaignResponse(saved,
+                (int) applicationRepository.countByCampaignId(saved.getId()),
+                resolveThumbUrl(saved));
     }
 
     @Transactional

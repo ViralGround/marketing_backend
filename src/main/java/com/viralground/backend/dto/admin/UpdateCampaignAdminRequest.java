@@ -19,7 +19,7 @@ public class UpdateCampaignAdminRequest {
     @Min(1)
     private Integer maxParticipants;
 
-    private String thumbnailUrl;
+    private String thumbnailFileKey;
     private String requirements;
     private CampaignStatus status;
 }

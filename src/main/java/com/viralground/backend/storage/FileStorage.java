@@ -8,6 +8,8 @@ public interface FileStorage {
 
     PresignedUpload presignUpload(String contentType, long sizeBytes);
 
+    PresignedUpload presignImageUpload(String contentType, long sizeBytes);
+
     String signedDownloadUrl(String fileKey);
 
     void delete(String fileKey);

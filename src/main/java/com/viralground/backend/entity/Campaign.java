@@ -51,6 +51,9 @@ public class Campaign {
     @Column(name = "thumbnail_url")
     private String thumbnailUrl;
 
+    @Column(name = "thumbnail_file_key")
+    private String thumbnailFileKey;
+
     @Column(columnDefinition = "TEXT")
     private String requirements;
 

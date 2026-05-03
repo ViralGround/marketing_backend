@@ -39,6 +39,17 @@ public class FileController {
         return ResponseEntity.ok(fileStorage.presignUpload(request.contentType(), request.sizeBytes()));
     }
 
+    @PostMapping("/presign-upload/image")
+    public ResponseEntity<PresignedUpload> presignImageUpload(
+            @Valid @RequestBody PresignUploadRequest request,
+            @AuthenticationPrincipal AuthUser authUser) {
+        if (authUser == null
+                || (authUser.getRole() != Role.COMPANY && authUser.getRole() != Role.ADMIN)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        return ResponseEntity.ok(fileStorage.presignImageUpload(request.contentType(), request.sizeBytes()));
+    }
+
     @PutMapping("/upload/{*fileKey}")
     public ResponseEntity<Void> upload(
             @PathVariable String fileKey,
@@ -47,14 +58,16 @@ public class FileController {
             @RequestHeader("Content-Type") String contentType,
             HttpServletRequest request) throws IOException {
         LocalFileStorage local = requireLocal();
+        String key = stripLeadingSlash(fileKey);
+        boolean isImage = key != null && key.startsWith("thumbnails/");
         // Content-Length 미선언(-1) 또는 상한 초과는 본문을 받기 전에 즉시 거부.
         // 실제 스트림 초과는 LocalFileStorage.acceptUpload 내부의 BoundedInputStream 이 끊는다.
         long declared = request.getContentLengthLong();
-        if (declared < 0 || declared > local.getMaxSizeBytes()) {
-            throw new AppException(ErrorCode.VIDEO_TOO_LARGE);
+        long maxBytes = isImage ? local.getMaxImageSizeBytes() : local.getMaxSizeBytes();
+        if (declared < 0 || declared > maxBytes) {
+            throw new AppException(isImage ? ErrorCode.IMAGE_TOO_LARGE : ErrorCode.VIDEO_TOO_LARGE);
         }
-        local.acceptUpload(stripLeadingSlash(fileKey), sig, exp,
-                request.getInputStream(), contentType, declared);
+        local.acceptUpload(key, sig, exp, request.getInputStream(), contentType, declared);
         return ResponseEntity.noContent().build();
     }
 

@@ -23,6 +23,12 @@ public class FileStorageProperties {
     /** 허용 콘텐츠 타입 화이트리스트. */
     private List<String> allowedContentTypes = List.of("video/mp4", "video/quicktime", "video/webm");
 
+    /** 이미지 업로드 허용 콘텐츠 타입. */
+    private List<String> allowedImageContentTypes = List.of("image/jpeg", "image/png", "image/webp");
+
+    /** 이미지 업로드 최대 크기 (bytes). 기본 10MB. */
+    private long maxImageSizeBytes = 10_485_760L;
+
     /** 서명 URL 유효 시간 (초). 기본 15분. */
     private long signingTtlSeconds = 900;
 

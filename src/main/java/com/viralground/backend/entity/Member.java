@@ -40,6 +40,21 @@ public class Member {
     @Builder.Default
     private Boolean emailVerified = false;
 
+    @Column(name = "agreed_terms_at")
+    private LocalDateTime agreedTermsAt;
+
+    @Column(name = "agreed_privacy_at")
+    private LocalDateTime agreedPrivacyAt;
+
+    @Column(name = "agreed_age14_at")
+    private LocalDateTime agreedAge14At;
+
+    @Column(name = "agreed_third_party_at")
+    private LocalDateTime agreedThirdPartyAt;
+
+    @Column(name = "marketing_opt_in_at")
+    private LocalDateTime marketingOptInAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

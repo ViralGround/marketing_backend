@@ -16,6 +16,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -28,8 +30,18 @@ public class AuthService {
     private final EmailVerificationService emailVerificationService;
     private final ApplicationEventPublisher eventPublisher;
 
+    private static final int MIN_CREATOR_AGE = 14;
+
     @Transactional
     public void signup(SignupRequest req) {
+        if (req.getAge() == null || req.getAge() < MIN_CREATOR_AGE) {
+            throw new AppException(ErrorCode.UNDERAGE);
+        }
+        if (!req.isAgreedTerms() || !req.isAgreedPrivacy()
+                || !req.isAgreedAge14() || !req.isAgreedThirdParty()) {
+            throw new AppException(ErrorCode.AGREEMENT_REQUIRED);
+        }
+
         String email = normalize(req.getEmail());
 
         emailVerificationService.requireVerified(email, req.getVerifiedToken());
@@ -38,6 +50,7 @@ public class AuthService {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
         }
 
+        LocalDateTime now = LocalDateTime.now();
         Member member;
         try {
             member = memberRepository.saveAndFlush(Member.builder()
@@ -47,6 +60,11 @@ public class AuthService {
                     .role(Role.CREATOR)
                     .status(MemberStatus.PENDING)
                     .emailVerified(true)
+                    .agreedTermsAt(now)
+                    .agreedPrivacyAt(now)
+                    .agreedAge14At(now)
+                    .agreedThirdPartyAt(now)
+                    .marketingOptInAt(req.isMarketingOptIn() ? now : null)
                     .build());
         } catch (DataIntegrityViolationException e) {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
@@ -69,6 +87,10 @@ public class AuthService {
 
     @Transactional
     public void signupCompany(CompanySignupRequest req) {
+        if (!req.isAgreedTerms() || !req.isAgreedPrivacy() || !req.isAgreedAge14()) {
+            throw new AppException(ErrorCode.AGREEMENT_REQUIRED);
+        }
+
         String email = normalize(req.getEmail());
 
         emailVerificationService.requireVerified(email, req.getVerifiedToken());
@@ -77,6 +99,7 @@ public class AuthService {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
         }
 
+        LocalDateTime now = LocalDateTime.now();
         Member member;
         try {
             member = memberRepository.saveAndFlush(Member.builder()
@@ -86,6 +109,10 @@ public class AuthService {
                     .role(Role.COMPANY)
                     .status(MemberStatus.APPROVED)
                     .emailVerified(true)
+                    .agreedTermsAt(now)
+                    .agreedPrivacyAt(now)
+                    .agreedAge14At(now)
+                    .marketingOptInAt(req.isMarketingOptIn() ? now : null)
                     .build());
         } catch (DataIntegrityViolationException e) {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
