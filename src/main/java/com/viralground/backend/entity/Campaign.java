@@ -70,6 +70,17 @@ public class Campaign {
     @Column(name = "created_by_id", nullable = false)
     private Integer createdById;
 
+    /**
+     * 숨김(soft hide) 처리 시점. null 이면 노출, 값이 있으면 사용자/크리에이터에게 미노출.
+     * hard delete 가 자식 데이터(지원·에스크로)로 막힌 경우의 대체 운영 수단.
+     */
+    @Column(name = "hidden_at")
+    private LocalDateTime hiddenAt;
+
+    public boolean isHidden() {
+        return hiddenAt != null;
+    }
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_id", insertable = false, updatable = false)
     private Member createdBy;

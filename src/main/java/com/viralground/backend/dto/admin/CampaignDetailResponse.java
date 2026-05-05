@@ -26,6 +26,8 @@ public class CampaignDetailResponse {
     private final String escrowStatus;
     private final LocalDateTime fundedAt;
     private final LocalDateTime createdAt;
+    private final boolean hidden;
+    private final LocalDateTime hiddenAt;
     private final List<ApplicationInfo> applications;
 
     public CampaignDetailResponse(Campaign c, List<CampaignApplication> apps, String thumbnailUrl) {
@@ -48,6 +50,8 @@ public class CampaignDetailResponse {
         this.escrowStatus = c.getEscrowStatus().name();
         this.fundedAt = c.getFundedAt();
         this.createdAt = c.getCreatedAt();
+        this.hidden = c.isHidden();
+        this.hiddenAt = c.getHiddenAt();
         this.applications = apps.stream()
                 .map(a -> new ApplicationInfo(a,
                         submissionsByAppId.getOrDefault(a.getId(), List.of())))

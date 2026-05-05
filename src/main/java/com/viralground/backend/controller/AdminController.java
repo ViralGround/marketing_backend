@@ -5,6 +5,7 @@ import com.viralground.backend.dto.admin.CampaignDetailResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
 import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
+import com.viralground.backend.dto.admin.UpdateCampaignVisibilityRequest;
 import com.viralground.backend.dto.admin.UpdateMemberStatusRequest;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
 import com.viralground.backend.entity.Campaign;
@@ -97,6 +98,15 @@ public class AdminController {
     ResponseEntity<Void> deleteCampaign(@PathVariable Integer id) {
         adminService.deleteCampaign(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/campaigns/{id}/visibility")
+    ResponseEntity<Map<String, String>> setCampaignVisibility(
+            @PathVariable Integer id,
+            @Valid @RequestBody UpdateCampaignVisibilityRequest req) {
+        adminService.setCampaignVisibility(id, req.getHidden());
+        return ResponseEntity.ok(Map.of(
+                "message", req.getHidden() ? "캠페인이 숨김 처리되었습니다." : "캠페인이 다시 노출됩니다."));
     }
 
     // ── 지원 관리 ──────────────────────────────────

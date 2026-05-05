@@ -1,6 +1,8 @@
 package com.viralground.backend.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -44,6 +46,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, String>> handleAccessDenied(AccessDeniedException e) {
         return ResponseEntity.status(403).body(Map.of("message", "권한이 없습니다"));
+    }
+
+    /**
+     * AppException 가드를 우회한 FK/UNIQUE 제약 위반의 안전망. 사용자에게 원인 메시지를
+     * 그대로 노출하지 않고 일반화된 한국어 메시지를 반환.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException e) {
+        log.warn("DB 무결성 위반", e);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("message", "다른 데이터와 연결되어 있어 처리할 수 없습니다.",
+                        "code", "DATA_INTEGRITY_VIOLATION"));
     }
 
     @ExceptionHandler(Exception.class)

@@ -27,6 +27,7 @@ public enum ErrorCode {
     UNDERAGE("UNDERAGE", "만 14세 미만은 가입할 수 없습니다.", HttpStatus.BAD_REQUEST),
     AGREEMENT_REQUIRED("AGREEMENT_REQUIRED", "필수 약관에 동의해야 가입할 수 있습니다.", HttpStatus.BAD_REQUEST),
     CAMPAIGN_NOT_FOUND("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다", HttpStatus.NOT_FOUND),
+    CAMPAIGN_HAS_DEPENDENCIES("CAMPAIGN_HAS_DEPENDENCIES", "지원자 또는 예치금 거래가 있는 캠페인은 삭제할 수 없습니다. 대신 '숨김' 처리해 주세요.", HttpStatus.CONFLICT),
     APPLICATION_NOT_FOUND("APPLICATION_NOT_FOUND", "지원 내역을 찾을 수 없습니다", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("ALREADY_APPLIED", "이미 지원한 캠페인입니다", HttpStatus.CONFLICT),
     FORBIDDEN("FORBIDDEN", "권한이 없습니다", HttpStatus.FORBIDDEN),

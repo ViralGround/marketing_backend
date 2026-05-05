@@ -83,6 +83,10 @@ public class CampaignService {
     public CampaignResponse getCampaign(Integer id, Integer creatorId) {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        // 숨김 캠페인은 누구에게도 보이지 않게 — 정보 누출 방지 위해 NOT_FOUND 재사용.
+        if (campaign.isHidden()) {
+            throw new AppException(ErrorCode.CAMPAIGN_NOT_FOUND);
+        }
         CampaignApplication myApp = creatorId != null
                 ? applicationRepository.findByCampaignIdAndCreatorId(id, creatorId).orElse(null)
                 : null;
@@ -92,8 +96,11 @@ public class CampaignService {
 
     @Transactional
     public CampaignApplication apply(Integer campaignId, Integer creatorId, String message) {
-        campaignRepository.findById(campaignId)
+        Campaign target = campaignRepository.findById(campaignId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        if (target.isHidden()) {
+            throw new AppException(ErrorCode.CAMPAIGN_NOT_FOUND);
+        }
 
         if (applicationRepository.existsByCampaignIdAndCreatorId(campaignId, creatorId)) {
             throw new AppException(ErrorCode.ALREADY_APPLIED);

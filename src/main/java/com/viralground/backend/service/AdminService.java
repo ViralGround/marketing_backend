@@ -141,6 +141,8 @@ public class AdminService {
                     m.put("escrowStatus", c.getEscrowStatus().name());
                     m.put("deadline", c.getDeadline() != null ? c.getDeadline() : "");
                     m.put("createdAt", c.getCreatedAt());
+                    m.put("hidden", c.isHidden());
+                    m.put("hiddenAt", c.getHiddenAt());
                     m.put("applicationCount",
                             applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId()).size());
                     return m;
@@ -251,8 +253,28 @@ public class AdminService {
 
     @Transactional
     public void deleteCampaign(Integer id) {
-        campaignRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-        campaignRepository.deleteById(id);
+        Campaign campaign = campaignRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        // 지원자나 에스크로 트랜잭션이 있으면 hard delete 거부 — 회계·감사 데이터 보존.
+        // 운영자는 대신 "숨김" 처리해서 사용자 노출만 끌 수 있다.
+        long apps = applicationRepository.countByCampaignId(id);
+        long escrowTx = escrowTransactionRepository.countByCampaignId(id);
+        if (apps > 0 || escrowTx > 0) {
+            throw new AppException(ErrorCode.CAMPAIGN_HAS_DEPENDENCIES);
+        }
+        campaignRepository.delete(campaign);
+    }
+
+    /**
+     * 캠페인 노출 토글. 숨김 처리 시 일반 크리에이터 목록·상세에서 사라지지만,
+     * 자식 데이터(지원·에스크로)는 그대로 보존되어 정산·감사 흐름은 영향받지 않는다.
+     */
+    @Transactional
+    public void setCampaignVisibility(Integer id, boolean hidden) {
+        Campaign campaign = campaignRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        campaign.setHiddenAt(hidden ? LocalDateTime.now() : null);
+        campaignRepository.save(campaign);
     }
 
     /** 관리자 대시보드 KPI. 플랫폼 전체 거래·완료율·누적 성과를 집계. */
