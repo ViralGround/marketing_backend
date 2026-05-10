@@ -11,7 +11,7 @@ public enum ErrorCode {
     USER_NOT_FOUND("USER_NOT_FOUND", "존재하지 않는 계정입니다", HttpStatus.NOT_FOUND),
     INVALID_PASSWORD("INVALID_PASSWORD", "이메일 또는 비밀번호가 올바르지 않습니다", HttpStatus.UNAUTHORIZED),
     EMAIL_NOT_VERIFIED("EMAIL_NOT_VERIFIED", "이메일 인증이 필요합니다. 가입 시 발송된 인증 메일을 확인해주세요.", HttpStatus.FORBIDDEN),
-    PENDING_APPROVAL("PENDING_APPROVAL", "관리자 승인 대기 중입니다. 승인 후 로그인할 수 있어요.", HttpStatus.FORBIDDEN),
+    PENDING_APPROVAL("PENDING_APPROVAL", "관리자 승인 대기 중입니다. 승인까지 영업일 기준 일주일 이상 걸릴 수 있으며, 승인 후 로그인할 수 있어요.", HttpStatus.FORBIDDEN),
     REJECTED("REJECTED", "가입이 거절되었습니다. 문의는 관리자에게 연락해주세요.", HttpStatus.FORBIDDEN),
     DUPLICATE_EMAIL("DUPLICATE_EMAIL", "이미 등록된 이메일입니다", HttpStatus.CONFLICT),
     MISSING_TOKEN("MISSING_TOKEN", "토큰이 없습니다", HttpStatus.BAD_REQUEST),
