@@ -48,6 +48,10 @@ class CampaignRepositoryTest {
     }
 
     private Campaign saveOpenCampaign(String title, String brand, LocalDateTime hiddenAt) {
+        return saveOpenCampaign(title, brand, hiddenAt, null);
+    }
+
+    private Campaign saveOpenCampaign(String title, String brand, LocalDateTime hiddenAt, LocalDateTime deadline) {
         Campaign c = Campaign.builder()
                 .title(title)
                 .description("desc")
@@ -59,6 +63,7 @@ class CampaignRepositoryTest {
                 .status(CampaignStatus.OPEN)
                 .createdById(creatorId)
                 .hiddenAt(hiddenAt)
+                .deadline(deadline)
                 .build();
         return campaignRepository.save(c);
     }
@@ -70,7 +75,7 @@ class CampaignRepositoryTest {
         saveOpenCampaign("숨김 캠페인", "BrandB", LocalDateTime.now());
 
         // when
-        List<Campaign> result = campaignRepository.findOpenCampaignsAll();
+        List<Campaign> result = campaignRepository.findOpenCampaignsAll(LocalDateTime.now());
 
         // then
         assertThat(result).hasSize(1)
@@ -85,12 +90,58 @@ class CampaignRepositoryTest {
         saveOpenCampaign("바이럴 그라운드 숨김", "Brand", LocalDateTime.now());
 
         // when
-        List<Campaign> result = campaignRepository.findOpenCampaignsWithSearch("바이럴");
+        List<Campaign> result = campaignRepository.findOpenCampaignsWithSearch("바이럴", LocalDateTime.now());
 
         // then
         assertThat(result).hasSize(1)
                 .extracting(Campaign::getTitle)
                 .containsExactly("바이럴 그라운드 노출");
+    }
+
+    @Test
+    void findOpenCampaignsAll_마감_지난_캠페인_제외() {
+        // given — deadline 이 과거인 캠페인은 status=OPEN 이어도 노출 X
+        LocalDateTime now = LocalDateTime.now();
+        saveOpenCampaign("마감 전", "BrandA", null, now.plusDays(3));
+        saveOpenCampaign("마감 후", "BrandB", null, now.minusDays(1));
+
+        // when
+        List<Campaign> result = campaignRepository.findOpenCampaignsAll(now);
+
+        // then
+        assertThat(result).hasSize(1)
+                .extracting(Campaign::getTitle)
+                .containsExactly("마감 전");
+    }
+
+    @Test
+    void findOpenCampaignsAll_deadline_null_은_포함() {
+        // given — deadline 미정(null) 캠페인은 노출 유지 (마감일 정책 미사용 케이스)
+        saveOpenCampaign("마감 미정", "BrandA", null, null);
+
+        // when
+        List<Campaign> result = campaignRepository.findOpenCampaignsAll(LocalDateTime.now());
+
+        // then
+        assertThat(result).hasSize(1)
+                .extracting(Campaign::getTitle)
+                .containsExactly("마감 미정");
+    }
+
+    @Test
+    void findOpenCampaignsWithSearch_마감_지난_캠페인_제외() {
+        // given — 검색어 매치되어도 마감 지난 건 제외
+        LocalDateTime now = LocalDateTime.now();
+        saveOpenCampaign("바이럴 진행중", "Brand", null, now.plusDays(2));
+        saveOpenCampaign("바이럴 마감됨", "Brand", null, now.minusHours(1));
+
+        // when
+        List<Campaign> result = campaignRepository.findOpenCampaignsWithSearch("바이럴", now);
+
+        // then
+        assertThat(result).hasSize(1)
+                .extracting(Campaign::getTitle)
+                .containsExactly("바이럴 진행중");
     }
 
     @Test

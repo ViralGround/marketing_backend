@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -35,11 +36,18 @@ public class CampaignService {
     private final MemberRepository memberRepository;
     private final ApplicationSubmissionRepository submissionRepository;
     private final FileStorage fileStorage;
+    private final Clock clock;
+
+    /** 캠페인 마감 여부. deadline 이 null 이면 "마감 미정" 으로 보고 항상 활성으로 간주. */
+    private boolean isPastDeadline(Campaign c) {
+        return c.getDeadline() != null && LocalDateTime.now(clock).isAfter(c.getDeadline());
+    }
 
     @Transactional(readOnly = true)
     public List<CampaignResponse> getOpenCampaigns(String sort, String search, Integer creatorId) {
         List<Campaign> campaigns = campaignRepository.findOpenCampaigns(
-                search != null && !search.isBlank() ? search : null);
+                search != null && !search.isBlank() ? search : null,
+                LocalDateTime.now(clock));
         if (campaigns.isEmpty()) return List.of();
 
         Map<Integer, CampaignApplication> myApps = creatorId != null
@@ -84,7 +92,8 @@ public class CampaignService {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         // 숨김 캠페인은 누구에게도 보이지 않게 — 정보 누출 방지 위해 NOT_FOUND 재사용.
-        if (campaign.isHidden()) {
+        // 마감 지난 캠페인도 같은 정책: 상세 진입 불가 (직링크 차단).
+        if (campaign.isHidden() || isPastDeadline(campaign)) {
             throw new AppException(ErrorCode.CAMPAIGN_NOT_FOUND);
         }
         CampaignApplication myApp = creatorId != null
@@ -100,6 +109,9 @@ public class CampaignService {
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         if (target.isHidden()) {
             throw new AppException(ErrorCode.CAMPAIGN_NOT_FOUND);
+        }
+        if (isPastDeadline(target)) {
+            throw new AppException(ErrorCode.CAMPAIGN_CLOSED);
         }
 
         if (applicationRepository.existsByCampaignIdAndCreatorId(campaignId, creatorId)) {
@@ -173,12 +185,20 @@ public class CampaignService {
             app.setVideoSizeBytes(null);
         }
 
+        // 마감 지난 캠페인에는 신규 제출/재제출 모두 차단.
+        // 입력 형식 검증을 먼저 통과시켜야 클라이언트가 의미있는 에러를 받는다.
+        Campaign campaign = campaignRepository.findById(app.getCampaignId())
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        if (isPastDeadline(campaign)) {
+            throw new AppException(ErrorCode.CAMPAIGN_CLOSED);
+        }
+
         if (app.getStatus() == ApplicationStatus.CHANGES_REQUESTED) {
             app.setResubmissionCount((app.getResubmissionCount() == null ? 0 : app.getResubmissionCount()) + 1);
         }
         app.setReviewComment(null);
         app.setStatus(ApplicationStatus.SUBMITTED);
-        app.setSubmittedAt(LocalDateTime.now());
+        app.setSubmittedAt(LocalDateTime.now(clock));
         applicationRepository.save(app);
 
         submissionRepository.save(ApplicationSubmission.builder()

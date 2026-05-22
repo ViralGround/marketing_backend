@@ -3,6 +3,7 @@ package com.viralground.backend.service;
 import com.viralground.backend.dto.campaign.SubmitWorkRequest;
 import com.viralground.backend.entity.ApplicationStatus;
 import com.viralground.backend.entity.ApplicationSubmission;
+import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignApplication;
 import com.viralground.backend.entity.SubmissionReviewStatus;
 import com.viralground.backend.exception.AppException;
@@ -18,8 +19,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,11 +38,13 @@ class CampaignServiceResubmitTest {
     @Mock MemberRepository memberRepository;
     @Mock ApplicationSubmissionRepository submissionRepository;
     @Mock FileStorage fileStorage;
+    @Spy Clock clock = Clock.systemDefaultZone();
 
     @InjectMocks
     CampaignService campaignService;
 
     CampaignApplication approvedApp;
+    Campaign activeCampaign;
 
     @BeforeEach
     void setUp() {
@@ -50,6 +55,10 @@ class CampaignServiceResubmitTest {
                 .status(ApplicationStatus.APPROVED)
                 .resubmissionCount(0)
                 .build();
+        activeCampaign = Campaign.builder()
+                .id(1)
+                .deadline(null)
+                .build();
     }
 
     @Test
@@ -57,6 +66,7 @@ class CampaignServiceResubmitTest {
         // given
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
         when(fileStorage.exists("submissions/a.mp4")).thenReturn(true);
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(activeCampaign));
         SubmitWorkRequest req = new SubmitWorkRequest(null, "submissions/a.mp4", "video/mp4", 1024L);
 
         // when
@@ -78,6 +88,7 @@ class CampaignServiceResubmitTest {
         approvedApp.setResubmissionCount(1);
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
         when(fileStorage.exists("submissions/v2.mp4")).thenReturn(true);
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(activeCampaign));
         SubmitWorkRequest req = new SubmitWorkRequest(null, "submissions/v2.mp4", "video/mp4", 2048L);
 
         // when
@@ -124,6 +135,7 @@ class CampaignServiceResubmitTest {
         approvedApp.setReviewComment("로고 노출 부족");
         when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
         when(fileStorage.exists("submissions/v.mp4")).thenReturn(true);
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(activeCampaign));
         SubmitWorkRequest req = new SubmitWorkRequest(null, "submissions/v.mp4", "video/mp4", 1L);
 
         // when

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -27,23 +28,25 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
             SELECT c FROM Campaign c
             WHERE c.status = com.viralground.backend.entity.CampaignStatus.OPEN
             AND c.hiddenAt IS NULL
+            AND (c.deadline IS NULL OR c.deadline > :now)
             """)
-    List<Campaign> findOpenCampaignsAll();
+    List<Campaign> findOpenCampaignsAll(@Param("now") LocalDateTime now);
 
     @Query("""
             SELECT c FROM Campaign c
             WHERE c.status = com.viralground.backend.entity.CampaignStatus.OPEN
             AND c.hiddenAt IS NULL
+            AND (c.deadline IS NULL OR c.deadline > :now)
             AND (LOWER(c.title) LIKE LOWER(CONCAT('%', :search, '%'))
                  OR LOWER(c.brandName) LIKE LOWER(CONCAT('%', :search, '%')))
             """)
-    List<Campaign> findOpenCampaignsWithSearch(@Param("search") String search);
+    List<Campaign> findOpenCampaignsWithSearch(@Param("search") String search, @Param("now") LocalDateTime now);
 
-    default List<Campaign> findOpenCampaigns(String search) {
+    default List<Campaign> findOpenCampaigns(String search, LocalDateTime now) {
         if (search == null || search.isBlank()) {
-            return findOpenCampaignsAll();
+            return findOpenCampaignsAll(now);
         }
-        return findOpenCampaignsWithSearch(search.trim());
+        return findOpenCampaignsWithSearch(search.trim(), now);
     }
 
     @Query("""
