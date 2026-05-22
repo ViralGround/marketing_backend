@@ -38,6 +38,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/auth/**").permitAll()
+                        // 랜딩 페이지 상담신청 — 비인증 공개. 봇 방어는 추후 레이트리밋으로.
+                        .requestMatchers(HttpMethod.POST, "/contact").permitAll()
                         // 서명 URL 기반 접근 — JWT 불필요. 서명 검증은 FileStorage 구현체가 담당.
                         .requestMatchers(HttpMethod.PUT, "/files/upload/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/files/**").permitAll()

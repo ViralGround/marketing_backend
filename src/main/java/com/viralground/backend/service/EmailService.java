@@ -157,6 +157,20 @@ public class EmailService {
     }
 
     @Async
+    public void notifyAdminsOfNewContact(String email, String brandName, String contactName) {
+        if (adminEmails.isEmpty()) return;
+        String html = """
+                <p>새 상담 신청이 접수되었습니다.</p>
+                <p>이메일: %s<br>브랜드명: %s<br>담당자명: %s</p>
+                <p style="color:#888;font-size:13px;">어드민 페이지에서 상세 확인 후 회신해주세요.</p>
+                """.formatted(
+                esc(email),
+                esc(brandName),
+                contactName == null || contactName.isBlank() ? "(미입력)" : esc(contactName));
+        adminEmails.forEach(admin -> sendEmail(admin, "[Viral Ground] 새 상담 신청 — " + brandName, html));
+    }
+
+    @Async
     public void notifyCreatorOfApplicationResult(String to, String name, String campaignTitle,
                                                  String status, Integer rewardAmount, String reviewComment) {
         String msg = switch (status) {
