@@ -6,12 +6,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class ContactService {
 
     private final ContactRequestRepository repository;
     private final EmailService emailService;
+
+    /** 어드민 페이지용 — 접수일 내림차순 전체 조회. */
+    @Transactional(readOnly = true)
+    public List<ContactRequest> listAll() {
+        return repository.findAllByOrderByCreatedAtDesc();
+    }
 
     /**
      * 랜딩 페이지 상담신청 폼 접수. DB 에 저장하고 관리자에게 알림 메일 발송.

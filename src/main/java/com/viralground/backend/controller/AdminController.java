@@ -2,6 +2,7 @@ package com.viralground.backend.controller;
 
 import com.viralground.backend.config.AuthUser;
 import com.viralground.backend.dto.admin.CampaignDetailResponse;
+import com.viralground.backend.dto.admin.ContactRequestResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
 import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
@@ -10,6 +11,7 @@ import com.viralground.backend.dto.admin.UpdateMemberStatusRequest;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.service.AdminService;
+import com.viralground.backend.service.ContactService;
 import com.viralground.backend.service.EscrowService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final EscrowService escrowService;
+    private final ContactService contactService;
 
     // ── 대시보드 KPI ──────────────────────────────────
 
@@ -141,5 +144,15 @@ public class AdminController {
     ResponseEntity<Map<String, String>> forceCompleteEscrow(@PathVariable Integer id) {
         escrowService.forceConfirmDeposit(id);
         return ResponseEntity.ok(Map.of("message", "예치금이 완료 처리되었습니다."));
+    }
+
+    // ── 상담 신청 관리 ──────────────────────────────────
+
+    @GetMapping("/contacts")
+    ResponseEntity<Map<String, Object>> getContacts() {
+        List<ContactRequestResponse> contacts = contactService.listAll().stream()
+                .map(ContactRequestResponse::from)
+                .toList();
+        return ResponseEntity.ok(Map.of("contacts", contacts));
     }
 }

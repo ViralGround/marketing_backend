@@ -9,6 +9,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,6 +65,24 @@ class ContactServiceTest {
         ArgumentCaptor<ContactRequest> captor = ArgumentCaptor.forClass(ContactRequest.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getContactName()).isNull();
+    }
+
+    @Test
+    void should_상담신청_최신순_조회() {
+        // given — repository 가 최신순 정렬해 반환한다고 가정
+        ContactRequest a = ContactRequest.builder()
+                .id(1).email("a@a.com").brandName("A").createdAt(LocalDateTime.now().minusDays(1))
+                .build();
+        ContactRequest b = ContactRequest.builder()
+                .id(2).email("b@b.com").brandName("B").createdAt(LocalDateTime.now())
+                .build();
+        when(repository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(b, a));
+
+        // when
+        List<ContactRequest> result = contactService.listAll();
+
+        // then — repository 결과를 그대로 위임
+        assertThat(result).hasSize(2).containsExactly(b, a);
     }
 
     @Test
