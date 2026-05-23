@@ -12,11 +12,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,7 +57,7 @@ class AdminServiceGetMembersTest {
         legacy.setCreatedAt(LocalDateTime.now());
         when(memberRepository.findAllByStatusAndSearch(null, null))
                 .thenReturn(List.of(legacy));
-        when(profileRepository.findByMemberId(1)).thenReturn(Optional.empty());
+        when(profileRepository.findByMemberIdIn(List.of(1))).thenReturn(List.of());
 
         // when & then
         assertThatCode(() -> adminService.getMembers("ALL", null))
@@ -82,7 +81,7 @@ class AdminServiceGetMembersTest {
                 .build();
         when(memberRepository.findAllByStatusAndSearch(null, null))
                 .thenReturn(List.of(m));
-        when(profileRepository.findByMemberId(7)).thenReturn(Optional.of(profile));
+        when(profileRepository.findByMemberIdIn(List.of(7))).thenReturn(List.of(profile));
 
         // when
         Map<String, Object> result = adminService.getMembers("ALL", null);
@@ -101,7 +100,7 @@ class AdminServiceGetMembersTest {
         m.setCreatedAt(LocalDateTime.now());
         when(memberRepository.findAllByStatusAndSearch(null, null))
                 .thenReturn(List.of(m));
-        when(profileRepository.findByMemberId(9)).thenReturn(Optional.empty());
+        when(profileRepository.findByMemberIdIn(List.of(9))).thenReturn(List.of());
 
         // when
         Map<String, Object> result = adminService.getMembers("ALL", null);
@@ -115,7 +114,7 @@ class AdminServiceGetMembersTest {
 
     @Test
     void COMPANY_회원은_profileRepository_를_조회하지_않는다() {
-        // given — COMPANY 는 CreatorProfile 이 애초에 없으므로 불필요한 N+1 조회를 피해야 한다.
+        // given — COMPANY 는 CreatorProfile 이 애초에 없으므로 IN 쿼리 자체를 호출하지 말아야 한다.
         Member company = Member.builder()
                 .id(3)
                 .email("co@vg.test")
@@ -133,9 +132,33 @@ class AdminServiceGetMembersTest {
         Map<String, Object> result = adminService.getMembers("ALL", null);
 
         // then
-        verify(profileRepository, never()).findByMemberId(anyInt());
+        verify(profileRepository, never()).findByMemberIdIn(anyCollection());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> members = (List<Map<String, Object>>) result.get("members");
         assertThat(members.get(0)).containsEntry("instagramId", null);
+    }
+
+    @Test
+    void 다수의_CREATOR_회원_조회시_profile_조회는_한_번만_일어난다() {
+        // given — N+1 회귀 방지. CREATOR 가 여러 명이어도 findByMemberIdIn 한 번에 끝나야 한다.
+        Member m1 = creator(1, true);
+        Member m2 = creator(2, true);
+        Member m3 = creator(3, true);
+        m1.setCreatedAt(LocalDateTime.now());
+        m2.setCreatedAt(LocalDateTime.now());
+        m3.setCreatedAt(LocalDateTime.now());
+        CreatorProfile p1 = CreatorProfile.builder().memberId(1).instagramId("ig1").build();
+        CreatorProfile p2 = CreatorProfile.builder().memberId(2).instagramId("ig2").build();
+        when(memberRepository.findAllByStatusAndSearch(null, null))
+                .thenReturn(List.of(m1, m2, m3));
+        when(profileRepository.findByMemberIdIn(List.of(1, 2, 3)))
+                .thenReturn(List.of(p1, p2));
+
+        // when
+        adminService.getMembers("ALL", null);
+
+        // then — IN 쿼리 1회만, 개별 findByMemberId 는 0회.
+        verify(profileRepository, org.mockito.Mockito.times(1)).findByMemberIdIn(anyCollection());
+        verify(profileRepository, never()).findByMemberId(org.mockito.ArgumentMatchers.anyInt());
     }
 }

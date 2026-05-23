@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -65,6 +66,18 @@ public class AdminService {
         long todayCount = memberRepository.countByCreatedAtAfter(todayStart);
         long weekCount = memberRepository.countByCreatedAtAfter(weekAgo);
 
+        // CREATOR 회원만 CreatorProfile 조회 대상. COMPANY/ADMIN 은 프로필이 애초에 없으므로 제외.
+        List<Integer> creatorIds = members.stream()
+                .filter(m -> m.getRole() == Role.CREATOR)
+                .map(Member::getId)
+                .toList();
+        Map<Integer, String> instagramIdByMemberId = creatorIds.isEmpty()
+                ? Map.of()
+                : profileRepository.findByMemberIdIn(creatorIds).stream()
+                        .filter(p -> p.getInstagramId() != null)
+                        .collect(Collectors.toMap(CreatorProfile::getMemberId,
+                                CreatorProfile::getInstagramId, (a, b) -> a));
+
         List<Map<String, Object>> list = members.stream()
                 .map(m -> {
                     Map<String, Object> row = new java.util.HashMap<>();
@@ -76,8 +89,7 @@ public class AdminService {
                     row.put("emailVerified", m.getEmailVerified());
                     row.put("createdAt", m.getCreatedAt());
                     row.put("instagramId", m.getRole() == Role.CREATOR
-                            ? profileRepository.findByMemberId(m.getId())
-                                    .map(CreatorProfile::getInstagramId).orElse(null)
+                            ? instagramIdByMemberId.get(m.getId())
                             : null);
                     return row;
                 })
@@ -101,7 +113,7 @@ public class AdminService {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         CreatorProfile profile = profileRepository.findByMemberId(id).orElse(null);
-        long appCount = applicationRepository.findByCreatorIdOrderByAppliedAtDesc(id).size();
+        long appCount = applicationRepository.countByCreatorId(id);
         return new MemberDetailResponse(member, profile, appCount);
     }
 
@@ -129,7 +141,16 @@ public class AdminService {
     public List<Map<String, Object>> getCampaigns(String statusStr) {
         CampaignStatus status = (statusStr != null && !"ALL".equals(statusStr))
                 ? CampaignStatus.valueOf(statusStr) : null;
-        return campaignRepository.findAllByStatus(status).stream()
+        List<Campaign> campaigns = campaignRepository.findAllByStatus(status);
+        if (campaigns.isEmpty()) return List.of();
+
+        List<Integer> campaignIds = campaigns.stream().map(Campaign::getId).toList();
+        Map<Integer, Long> countByCampaignId = applicationRepository.countByCampaignIdIn(campaignIds).stream()
+                .collect(Collectors.toMap(
+                        CampaignApplicationRepository.CampaignCountRow::getCampaignId,
+                        CampaignApplicationRepository.CampaignCountRow::getCount));
+
+        return campaigns.stream()
                 .map(c -> {
                     Map<String, Object> m = new java.util.HashMap<>();
                     m.put("id", c.getId());
@@ -144,7 +165,7 @@ public class AdminService {
                     m.put("hidden", c.isHidden());
                     m.put("hiddenAt", c.getHiddenAt());
                     m.put("applicationCount",
-                            applicationRepository.findByCampaignIdOrderByAppliedAtDesc(c.getId()).size());
+                            countByCampaignId.getOrDefault(c.getId(), 0L).intValue());
                     return m;
                 })
                 .toList();
@@ -334,14 +355,26 @@ public class AdminService {
         // PENDING_DEPOSIT 은 기업이 아직 계좌이체 완료를 누르지 않은 상태,
         // DEPOSIT_CONFIRMING 은 입금 신청 후 관리자 확인 대기. 두 상태 모두 관리자가
         // 현황을 파악해야 하므로 함께 반환하고, 프론트는 escrowStatus 로 액션 버튼을 분기한다.
-        return campaignRepository
+        List<Campaign> campaigns = campaignRepository
                 .findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(
-                        List.of(EscrowStatus.PENDING_DEPOSIT, EscrowStatus.DEPOSIT_CONFIRMING))
-                .stream()
+                        List.of(EscrowStatus.PENDING_DEPOSIT, EscrowStatus.DEPOSIT_CONFIRMING));
+        if (campaigns.isEmpty()) return List.of();
+
+        List<Integer> companyMemberIds = campaigns.stream()
+                .map(Campaign::getCreatedById)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Integer, String> companyNameByMemberId = companyMemberIds.isEmpty()
+                ? Map.of()
+                : companyProfileRepository.findByMemberIdIn(companyMemberIds).stream()
+                        .collect(Collectors.toMap(CompanyProfile::getMemberId,
+                                CompanyProfile::getCompanyName, (a, b) -> a));
+
+        return campaigns.stream()
                 .map(c -> {
-                    String companyName = companyProfileRepository.findByMemberId(c.getCreatedById())
-                            .map(p -> p.getCompanyName())
-                            .orElse("-");
+                    String companyName = companyNameByMemberId
+                            .getOrDefault(c.getCreatedById(), "-");
                     Map<String, Object> m = new java.util.HashMap<>();
                     m.put("id", c.getId());
                     m.put("title", c.getTitle());

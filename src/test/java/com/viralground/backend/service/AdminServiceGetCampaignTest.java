@@ -13,9 +13,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -98,5 +103,46 @@ class AdminServiceGetCampaignTest {
         CampaignDetailResponse.ApplicationInfo info = response.getApplications().get(0);
         assertThat(info.creator()).isNotNull();
         assertThat(info.creator().name()).isEqualTo("크리에이터20");
+    }
+
+    @Test
+    void 캠페인_목록_조회시_신청자_수는_IN_쿼리_한_번으로_집계된다() {
+        // given — N+1 회귀 방지. 캠페인이 여러 개여도 countByCampaignIdIn 한 번에 신청 수를 받아와야 한다.
+        Campaign c1 = Campaign.builder().id(1).title("A").status(CampaignStatus.OPEN)
+                .escrowStatus(EscrowStatus.FUNDED).rewardAmount(1).maxParticipants(1).totalBudget(1).build();
+        Campaign c2 = Campaign.builder().id(2).title("B").status(CampaignStatus.OPEN)
+                .escrowStatus(EscrowStatus.FUNDED).rewardAmount(1).maxParticipants(1).totalBudget(1).build();
+        Campaign c3 = Campaign.builder().id(3).title("C").status(CampaignStatus.OPEN)
+                .escrowStatus(EscrowStatus.FUNDED).rewardAmount(1).maxParticipants(1).totalBudget(1).build();
+        when(campaignRepository.findAllByStatus(CampaignStatus.OPEN))
+                .thenReturn(List.of(c1, c2, c3));
+
+        CampaignApplicationRepository.CampaignCountRow row1 = countRow(1, 5L);
+        CampaignApplicationRepository.CampaignCountRow row3 = countRow(3, 2L);
+        when(applicationRepository.countByCampaignIdIn(List.of(1, 2, 3)))
+                .thenReturn(List.of(row1, row3));
+
+        // when
+        List<Map<String, Object>> result = adminService.getCampaigns("OPEN");
+
+        // then
+        assertThat(result).hasSize(3);
+        Map<String, Object> r1 = result.stream().filter(m -> m.get("id").equals(1)).findFirst().orElseThrow();
+        Map<String, Object> r2 = result.stream().filter(m -> m.get("id").equals(2)).findFirst().orElseThrow();
+        Map<String, Object> r3 = result.stream().filter(m -> m.get("id").equals(3)).findFirst().orElseThrow();
+        assertThat(r1).containsEntry("applicationCount", 5);
+        assertThat(r2).containsEntry("applicationCount", 0);
+        assertThat(r3).containsEntry("applicationCount", 2);
+
+        verify(applicationRepository, times(1)).countByCampaignIdIn(anyList());
+        verify(applicationRepository, never())
+                .findByCampaignIdOrderByAppliedAtDesc(org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    private CampaignApplicationRepository.CampaignCountRow countRow(int campaignId, long count) {
+        return new CampaignApplicationRepository.CampaignCountRow() {
+            @Override public Integer getCampaignId() { return campaignId; }
+            @Override public Long getCount() { return count; }
+        };
     }
 }

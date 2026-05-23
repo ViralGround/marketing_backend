@@ -99,7 +99,7 @@ public class CampaignService {
         CampaignApplication myApp = creatorId != null
                 ? applicationRepository.findByCampaignIdAndCreatorId(id, creatorId).orElse(null)
                 : null;
-        int count = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id).size();
+        int count = (int) applicationRepository.countByCampaignId(id);
         return new CampaignResponse(campaign, myApp, count, resolveThumbUrl(campaign));
     }
 

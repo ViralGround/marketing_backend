@@ -34,6 +34,8 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
 
     long countByCreatorIdAndStatus(Integer creatorId, ApplicationStatus status);
 
+    long countByCreatorId(Integer creatorId);
+
     long countByCampaignId(Integer campaignId);
 
     /** status 별 지원 수. KPI 대시보드의 매칭률·완료율 집계용. */

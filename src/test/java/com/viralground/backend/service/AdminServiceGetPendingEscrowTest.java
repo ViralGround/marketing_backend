@@ -12,7 +12,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -58,8 +57,8 @@ class AdminServiceGetPendingEscrowTest {
         when(campaignRepository.findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(
                 List.of(EscrowStatus.PENDING_DEPOSIT, EscrowStatus.DEPOSIT_CONFIRMING)))
                 .thenReturn(List.of(confirming, pending));
-        when(companyProfileRepository.findByMemberId(101)).thenReturn(Optional.empty());
-        when(companyProfileRepository.findByMemberId(102)).thenReturn(Optional.empty());
+        when(companyProfileRepository.findByMemberIdIn(anyCollection()))
+                .thenReturn(List.of());
 
         // when
         List<Map<String, Object>> result = adminService.getPendingEscrowCampaigns();
@@ -77,8 +76,8 @@ class AdminServiceGetPendingEscrowTest {
         Campaign confirming = campaign(2, EscrowStatus.DEPOSIT_CONFIRMING, LocalDateTime.now());
         when(campaignRepository.findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(anyCollection()))
                 .thenReturn(List.of(pending, confirming));
-        when(companyProfileRepository.findByMemberId(101)).thenReturn(Optional.empty());
-        when(companyProfileRepository.findByMemberId(102)).thenReturn(Optional.empty());
+        when(companyProfileRepository.findByMemberIdIn(anyCollection()))
+                .thenReturn(List.of());
 
         // when
         List<Map<String, Object>> result = adminService.getPendingEscrowCampaigns();
@@ -91,5 +90,25 @@ class AdminServiceGetPendingEscrowTest {
 
         assertThat(pendingRow).containsEntry("escrowStatus", "PENDING_DEPOSIT");
         assertThat(confirmingRow).containsEntry("escrowStatus", "DEPOSIT_CONFIRMING");
+    }
+
+    @Test
+    void 회사명_조회는_findByMemberIdIn_한_번으로_끝난다() {
+        // given — N+1 회귀 방지. 캠페인 N개여도 회사명 IN 쿼리는 1회.
+        Campaign c1 = campaign(1, EscrowStatus.PENDING_DEPOSIT, null);
+        Campaign c2 = campaign(2, EscrowStatus.PENDING_DEPOSIT, null);
+        Campaign c3 = campaign(3, EscrowStatus.DEPOSIT_CONFIRMING, LocalDateTime.now());
+        when(campaignRepository.findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(anyCollection()))
+                .thenReturn(List.of(c1, c2, c3));
+        when(companyProfileRepository.findByMemberIdIn(anyCollection())).thenReturn(List.of());
+
+        // when
+        adminService.getPendingEscrowCampaigns();
+
+        // then
+        org.mockito.Mockito.verify(companyProfileRepository, org.mockito.Mockito.times(1))
+                .findByMemberIdIn(anyCollection());
+        org.mockito.Mockito.verify(companyProfileRepository, org.mockito.Mockito.never())
+                .findByMemberId(org.mockito.ArgumentMatchers.anyInt());
     }
 }
