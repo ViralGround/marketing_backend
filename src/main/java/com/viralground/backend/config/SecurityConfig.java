@@ -63,6 +63,11 @@ public class SecurityConfig {
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
+        // 브라우저가 preflight(OPTIONS) 응답을 1시간 캐싱하도록 지시.
+        // 도쿄 DB ↔ 싱가포르 Railway 환경에서 매 API 호출당 ~500ms 추가 왕복이
+        // 사라진다. Chromium 계열의 OPTIONS 캐시 상한은 2시간(7200) 이므로
+        // 그 안에서 1시간을 선택.
+        config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
