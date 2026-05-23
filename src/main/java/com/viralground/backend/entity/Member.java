@@ -61,11 +61,11 @@ public class Member {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private CreatorProfile creatorProfile;
-
-    @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private CompanyProfile companyProfile;
+    // CreatorProfile / CompanyProfile 양방향 매핑은 제거.
+    // mappedBy 측 OneToOne 은 fetch=LAZY 가 실제로는 무시되어 Member 조회마다
+    // 추가 SELECT 가 발생(Hibernate 알려진 동작). 코드에서 m.getCreatorProfile()
+    // 같은 호출이 없고, 프로필은 *Repository.findByMemberId / findByMemberIdIn 으로
+    // 명시 조회하므로 양방향이 불필요했음.
 
     @PrePersist
     protected void onCreate() {
