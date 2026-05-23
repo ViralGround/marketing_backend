@@ -60,11 +60,13 @@ public class AdminService {
         long approved = members.stream().filter(m -> m.getStatus() == MemberStatus.APPROVED).count();
         long rejected = members.stream().filter(m -> m.getStatus() == MemberStatus.REJECTED).count();
 
-        long total = memberRepository.count();
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
-        long todayCount = memberRepository.countByCreatedAtAfter(todayStart);
-        long weekCount = memberRepository.countByCreatedAtAfter(weekAgo);
+        // 도쿄 DB ↔ Oregon 앱서버 RTT 절감을 위해 3개 count 를 1쿼리로 통합.
+        MemberRepository.MemberStatsRow statsRow = memberRepository.findMemberStats(todayStart, weekAgo);
+        long total = statsRow != null && statsRow.getTotal() != null ? statsRow.getTotal() : 0L;
+        long todayCount = statsRow != null && statsRow.getTodayCount() != null ? statsRow.getTodayCount() : 0L;
+        long weekCount = statsRow != null && statsRow.getWeekCount() != null ? statsRow.getWeekCount() : 0L;
 
         // CREATOR 회원만 CreatorProfile 조회 대상. COMPANY/ADMIN 은 프로필이 애초에 없으므로 제외.
         List<Integer> creatorIds = members.stream()
