@@ -81,6 +81,17 @@ public class Campaign {
         return hiddenAt != null;
     }
 
+    /**
+     * 랜딩 페이지 노출용 "대표 캠페인" 지정 순번. null 이면 비대표,
+     * 값이 있으면 오름차순으로 정렬해 노출한다. 최대 3건 제약은 서비스 레벨에서 강제.
+     */
+    @Column(name = "featured_order")
+    private Integer featuredOrder;
+
+    public boolean isFeatured() {
+        return featuredOrder != null;
+    }
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_id", insertable = false, updatable = false)
     private Member createdBy;

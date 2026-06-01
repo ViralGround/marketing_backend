@@ -40,6 +40,14 @@ public class CompanyProfile {
     private String homepage;
     private String industry;
 
+    /** 회사 소개글. 랜딩 페이지 회사 소개 모달에 노출되는 공개 텍스트. */
+    @Column(columnDefinition = "TEXT")
+    private String introduction;
+
+    /** 회사 로고 이미지 스토리지 키. 서명 URL 로 변환해 노출(원형 아바타). */
+    @Column(name = "logo_file_key")
+    private String logoFileKey;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

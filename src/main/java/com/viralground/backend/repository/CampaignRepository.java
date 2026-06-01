@@ -56,6 +56,34 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
             """)
     List<Campaign> findAllByStatus(CampaignStatus status);
 
+    /**
+     * 랜딩 페이지 노출용 대표 캠페인. featuredOrder 가 지정된 OPEN 캠페인 중
+     * 숨김·마감되지 않은 것만 지정 순번 오름차순으로 반환. 노출 건수 제한은 호출부에서.
+     */
+    @Query("""
+            SELECT c FROM Campaign c
+            WHERE c.featuredOrder IS NOT NULL
+            AND c.status = com.viralground.backend.entity.CampaignStatus.OPEN
+            AND c.hiddenAt IS NULL
+            AND (c.deadline IS NULL OR c.deadline > :now)
+            ORDER BY c.featuredOrder ASC
+            """)
+    List<Campaign> findFeaturedOpen(@Param("now") LocalDateTime now);
+
+    /** 대표 캠페인 최대 3건 제약 검증용. featuredOrder 가 지정된 전체 건수. */
+    long countByFeaturedOrderIsNotNull();
+
+    /** 회사 소개 모달용. 특정 기업(createdById)의 진행 중 OPEN 캠페인. */
+    @Query("""
+            SELECT c FROM Campaign c
+            WHERE c.createdById = :memberId
+            AND c.status = com.viralground.backend.entity.CampaignStatus.OPEN
+            AND c.hiddenAt IS NULL
+            AND (c.deadline IS NULL OR c.deadline > :now)
+            ORDER BY c.createdAt DESC
+            """)
+    List<Campaign> findOpenByCreator(@Param("memberId") Integer memberId, @Param("now") LocalDateTime now);
+
     List<Campaign> findByCreatedByIdOrderByCreatedAtDesc(Integer createdById);
 
     List<Campaign> findByEscrowStatusOrderByDepositRequestedAtAsc(EscrowStatus escrowStatus);

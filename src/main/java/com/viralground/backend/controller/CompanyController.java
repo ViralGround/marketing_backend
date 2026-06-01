@@ -5,6 +5,8 @@ import com.viralground.backend.dto.company.CompanyApplicationActionRequest;
 import com.viralground.backend.dto.company.CompanyCampaignCreateRequest;
 import com.viralground.backend.dto.company.CompanyCampaignResponse;
 import com.viralground.backend.dto.company.CompanyCampaignUpdateRequest;
+import com.viralground.backend.dto.company.CompanyProfileResponse;
+import com.viralground.backend.dto.company.UpdateCompanyProfileRequest;
 import com.viralground.backend.entity.Role;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
@@ -31,6 +33,21 @@ public class CompanyController {
     public ResponseEntity<Map<String, Object>> dashboard(@AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
         return ResponseEntity.ok(companyService.getDashboardSummary(authUser.getId()));
+    }
+
+    @GetMapping("/profile")
+    public ResponseEntity<CompanyProfileResponse> getProfile(@AuthenticationPrincipal AuthUser authUser) {
+        requireCompany(authUser);
+        return ResponseEntity.ok(companyService.getMyProfile(authUser.getId()));
+    }
+
+    @PatchMapping("/profile")
+    public ResponseEntity<Map<String, String>> updateProfile(
+            @Valid @RequestBody UpdateCompanyProfileRequest req,
+            @AuthenticationPrincipal AuthUser authUser) {
+        requireCompany(authUser);
+        companyService.updateMyProfile(authUser.getId(), req);
+        return ResponseEntity.ok(Map.of("message", "회사 정보가 저장되었습니다."));
     }
 
     @GetMapping("/campaigns")

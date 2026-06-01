@@ -43,6 +43,8 @@ public class SecurityConfig {
                         // 서명 URL 기반 접근 — JWT 불필요. 서명 검증은 FileStorage 구현체가 담당.
                         .requestMatchers(HttpMethod.PUT, "/files/upload/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/files/**").permitAll()
+                        // 랜딩 페이지 공개 조회(대표 캠페인·회사 소개) — 비로그인 노출.
+                        .requestMatchers(HttpMethod.GET, "/landing/**").permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

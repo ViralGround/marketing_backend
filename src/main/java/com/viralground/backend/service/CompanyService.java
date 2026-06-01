@@ -5,10 +5,13 @@ import com.viralground.backend.dto.company.CompanyApplicationActionRequest;
 import com.viralground.backend.dto.company.CompanyCampaignCreateRequest;
 import com.viralground.backend.dto.company.CompanyCampaignResponse;
 import com.viralground.backend.dto.company.CompanyCampaignUpdateRequest;
+import com.viralground.backend.dto.company.CompanyProfileResponse;
+import com.viralground.backend.dto.company.UpdateCompanyProfileRequest;
 import com.viralground.backend.entity.ApplicationStatus;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignApplication;
 import com.viralground.backend.entity.CampaignStatus;
+import com.viralground.backend.entity.CompanyProfile;
 import com.viralground.backend.entity.EscrowStatus;
 import com.viralground.backend.entity.Member;
 import com.viralground.backend.exception.AppException;
@@ -19,6 +22,7 @@ import com.viralground.backend.entity.SubmissionReviewStatus;
 import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
+import com.viralground.backend.repository.CompanyProfileRepository;
 import com.viralground.backend.repository.EscrowTransactionRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.storage.FileStorage;
@@ -45,12 +49,53 @@ public class CompanyService {
     private final ApplicationEventPublisher eventPublisher;
     private final ApplicationSubmissionRepository submissionRepository;
     private final FileStorage fileStorage;
+    private final CompanyProfileRepository companyProfileRepository;
 
     private String resolveThumbUrl(Campaign c) {
         if (c.getThumbnailFileKey() != null && !c.getThumbnailFileKey().isBlank()) {
             return fileStorage.signedDownloadUrl(c.getThumbnailFileKey());
         }
         return c.getThumbnailUrl();
+    }
+
+    private String resolveLogoUrl(CompanyProfile p) {
+        if (p.getLogoFileKey() != null && !p.getLogoFileKey().isBlank()) {
+            return fileStorage.signedDownloadUrl(p.getLogoFileKey());
+        }
+        return null;
+    }
+
+    @Transactional(readOnly = true)
+    public CompanyProfileResponse getMyProfile(Integer memberId) {
+        CompanyProfile p = companyProfileRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        return new CompanyProfileResponse(
+                p.getCompanyName(),
+                p.getIndustry(),
+                p.getHomepage(),
+                p.getIntroduction(),
+                resolveLogoUrl(p));
+    }
+
+    /** 기업 본인 프로필 수정. 전달된 필드만 갱신하고, logoFileKey 빈 문자열은 로고 제거로 본다. */
+    @Transactional
+    public void updateMyProfile(Integer memberId, UpdateCompanyProfileRequest req) {
+        CompanyProfile p = companyProfileRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        if (req.getIntroduction() != null) p.setIntroduction(req.getIntroduction());
+        if (req.getIndustry() != null) p.setIndustry(req.getIndustry());
+        if (req.getHomepage() != null) p.setHomepage(req.getHomepage());
+        if (req.getLogoFileKey() != null) {
+            if (req.getLogoFileKey().isBlank()) {
+                p.setLogoFileKey(null);
+            } else {
+                if (!fileStorage.exists(req.getLogoFileKey())) {
+                    throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+                }
+                p.setLogoFileKey(req.getLogoFileKey());
+            }
+        }
+        companyProfileRepository.save(p);
     }
 
     @Transactional

@@ -166,6 +166,7 @@ public class AdminService {
                     m.put("createdAt", c.getCreatedAt());
                     m.put("hidden", c.isHidden());
                     m.put("hiddenAt", c.getHiddenAt());
+                    m.put("featured", c.isFeatured());
                     m.put("applicationCount",
                             countByCampaignId.getOrDefault(c.getId(), 0L).intValue());
                     return m;
@@ -297,6 +298,28 @@ public class AdminService {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         campaign.setHiddenAt(hidden ? LocalDateTime.now() : null);
+        campaignRepository.save(campaign);
+    }
+
+    /**
+     * 랜딩 페이지 노출용 "대표 캠페인" 지정/해제. 지정은 최대 3건까지만 허용한다.
+     * 이미 대표인 캠페인의 재지정은 멱등 처리해 한도 검증 없이 통과시킨다.
+     */
+    @Transactional
+    public void setCampaignFeatured(Integer id, boolean featured) {
+        Campaign campaign = campaignRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        if (featured) {
+            if (!campaign.isFeatured()) {
+                long current = campaignRepository.countByFeaturedOrderIsNotNull();
+                if (current >= 3) {
+                    throw new AppException(ErrorCode.FEATURED_LIMIT_EXCEEDED);
+                }
+                campaign.setFeaturedOrder((int) current + 1);
+            }
+        } else {
+            campaign.setFeaturedOrder(null);
+        }
         campaignRepository.save(campaign);
     }
 

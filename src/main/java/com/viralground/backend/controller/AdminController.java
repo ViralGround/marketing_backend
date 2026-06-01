@@ -6,6 +6,7 @@ import com.viralground.backend.dto.admin.ContactRequestResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
 import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
+import com.viralground.backend.dto.admin.UpdateCampaignFeaturedRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignVisibilityRequest;
 import com.viralground.backend.dto.admin.UpdateMemberStatusRequest;
 import com.viralground.backend.dto.campaign.CampaignCreateRequest;
@@ -110,6 +111,16 @@ public class AdminController {
         adminService.setCampaignVisibility(id, req.getHidden());
         return ResponseEntity.ok(Map.of(
                 "message", req.getHidden() ? "캠페인이 숨김 처리되었습니다." : "캠페인이 다시 노출됩니다."));
+    }
+
+    @PatchMapping("/campaigns/{id}/featured")
+    ResponseEntity<Map<String, String>> setCampaignFeatured(
+            @PathVariable Integer id,
+            @Valid @RequestBody UpdateCampaignFeaturedRequest req) {
+        adminService.setCampaignFeatured(id, req.getFeatured());
+        return ResponseEntity.ok(Map.of(
+                "message", req.getFeatured()
+                        ? "대표 캠페인으로 지정되었습니다." : "대표 캠페인 지정이 해제되었습니다."));
     }
 
     // ── 지원 관리 ──────────────────────────────────
