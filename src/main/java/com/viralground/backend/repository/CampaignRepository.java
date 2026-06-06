@@ -66,12 +66,26 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
             AND c.status = com.viralground.backend.entity.CampaignStatus.OPEN
             AND c.hiddenAt IS NULL
             AND (c.deadline IS NULL OR c.deadline > :now)
-            ORDER BY c.featuredOrder ASC
+            ORDER BY c.featuredOrder ASC, c.id ASC
             """)
     List<Campaign> findFeaturedOpen(@Param("now") LocalDateTime now);
 
-    /** 대표 캠페인 최대 3건 제약 검증용. featuredOrder 가 지정된 전체 건수. */
-    long countByFeaturedOrderIsNotNull();
+    /**
+     * 대표 캠페인 한도 검증용 — 실제 랜딩 노출 대상(OPEN·미숨김·미마감)과 동일 기준 카운트.
+     * 숨김/마감된 featured 가 한도를 소모해 랜딩이 비어 보이는 모순을 막는다.
+     */
+    @Query("""
+            SELECT COUNT(c) FROM Campaign c
+            WHERE c.featuredOrder IS NOT NULL
+            AND c.status = com.viralground.backend.entity.CampaignStatus.OPEN
+            AND c.hiddenAt IS NULL
+            AND (c.deadline IS NULL OR c.deadline > :now)
+            """)
+    long countFeaturedOpen(@Param("now") LocalDateTime now);
+
+    /** featuredOrder 채번용 — 기존 최대 순번. 해제 후 재지정 시 순번 충돌/중복을 막는다. */
+    @Query("SELECT COALESCE(MAX(c.featuredOrder), 0) FROM Campaign c")
+    int maxFeaturedOrder();
 
     /** 회사 소개 모달용. 특정 기업(createdById)의 진행 중 OPEN 캠페인. */
     @Query("""

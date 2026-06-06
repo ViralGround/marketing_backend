@@ -111,14 +111,28 @@ class CampaignRepositoryFeaturedTest {
     }
 
     @Test
-    void countByFeaturedOrderIsNotNull_지정된_건수만_센다() {
-        // given
-        save("대표1", CampaignStatus.OPEN, 1, null, null, creatorId);
-        save("대표2", CampaignStatus.OPEN, 2, null, null, creatorId);
+    void countFeaturedOpen_노출_가능한_대표만_센다() {
+        // given — 숨김/마감된 대표는 한도를 소모하지 않아야 한다
+        LocalDateTime now = LocalDateTime.now();
+        save("노출", CampaignStatus.OPEN, 1, null, null, creatorId);
+        save("숨김", CampaignStatus.OPEN, 2, now, null, creatorId);
+        save("마감", CampaignStatus.OPEN, 3, null, now.minusDays(1), creatorId);
         save("비대표", CampaignStatus.OPEN, null, null, null, creatorId);
 
         // when & then
-        assertThat(campaignRepository.countByFeaturedOrderIsNotNull()).isEqualTo(2);
+        assertThat(campaignRepository.countFeaturedOpen(now)).isEqualTo(1);
+    }
+
+    @Test
+    void maxFeaturedOrder_기존_최대_순번_반환_없으면_0() {
+        // given — 대표가 없으면 0, 중간이 비어도 최대값
+        assertThat(campaignRepository.maxFeaturedOrder()).isZero();
+        save("대표1", CampaignStatus.OPEN, 1, null, null, creatorId);
+        save("대표3", CampaignStatus.OPEN, 3, null, null, creatorId);
+        save("비대표", CampaignStatus.OPEN, null, null, null, creatorId);
+
+        // when & then
+        assertThat(campaignRepository.maxFeaturedOrder()).isEqualTo(3);
     }
 
     @Test

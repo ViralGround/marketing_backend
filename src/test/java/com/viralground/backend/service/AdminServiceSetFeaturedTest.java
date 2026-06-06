@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,9 +53,10 @@ class AdminServiceSetFeaturedTest {
 
     @Test
     void should_featuredOrder_채번_when_featured_true() {
-        // given — 기존 대표 2건 존재 → 새 지정은 순번 3
+        // given — 노출 중 대표 2건(한도 OK), 기존 최대 순번 2 → 새 지정은 순번 3
         when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
-        when(campaignRepository.countByFeaturedOrderIsNotNull()).thenReturn(2L);
+        when(campaignRepository.countFeaturedOpen(any())).thenReturn(2L);
+        when(campaignRepository.maxFeaturedOrder()).thenReturn(2);
 
         // when
         adminService.setCampaignFeatured(1, true);
@@ -83,16 +85,16 @@ class AdminServiceSetFeaturedTest {
     }
 
     @Test
-    void should_FEATURED_LIMIT_EXCEEDED_when_이미_3건() {
-        // given — 이미 대표 3건이면 4번째 지정 거부
+    void should_FEATURED_LIMIT_EXCEEDED_when_이미_노출_3건() {
+        // given — 노출 중 대표가 이미 3건이면 4번째 지정 거부
         when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
-        when(campaignRepository.countByFeaturedOrderIsNotNull()).thenReturn(3L);
+        when(campaignRepository.countFeaturedOpen(any())).thenReturn(3L);
 
         // when & then
         assertThatThrownBy(() -> adminService.setCampaignFeatured(1, true))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.FEATURED_LIMIT_EXCEEDED);
-        verify(campaignRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(campaignRepository, never()).save(any());
     }
 
     @Test
@@ -104,9 +106,10 @@ class AdminServiceSetFeaturedTest {
         // when
         adminService.setCampaignFeatured(1, true);
 
-        // then — 한도 카운트 조회 없이 그대로 유지 저장
-        verify(campaignRepository, never()).countByFeaturedOrderIsNotNull();
-        verify(campaignRepository).save(org.mockito.ArgumentMatchers.any());
+        // then — 한도 카운트/채번 조회 없이 그대로 유지 저장
+        verify(campaignRepository, never()).countFeaturedOpen(any());
+        verify(campaignRepository, never()).maxFeaturedOrder();
+        verify(campaignRepository).save(any());
         assertThat(campaign.getFeaturedOrder()).isEqualTo(1);
     }
 
