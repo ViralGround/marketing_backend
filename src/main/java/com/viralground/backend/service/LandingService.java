@@ -76,7 +76,8 @@ public class LandingService {
                             countByCampaignId.getOrDefault(c.getId(), 0L).intValue(),
                             resolveThumbUrl(c),
                             profile != null ? c.getCreatedById() : null,
-                            profile != null ? resolveLogoUrl(profile) : null);
+                            profile != null ? resolveLogoUrl(profile) : resolveCampaignLogoUrl(c),
+                            c.getBrandIntroduction());
                 })
                 .toList();
     }
@@ -111,6 +112,14 @@ public class LandingService {
     private String resolveLogoUrl(CompanyProfile p) {
         if (p.getLogoFileKey() != null && !p.getLogoFileKey().isBlank()) {
             return fileStorage.signedDownloadUrl(p.getLogoFileKey());
+        }
+        return null;
+    }
+
+    /** 관리자 직접 생성 캠페인의 브랜드 로고 서명 URL. 없으면 null. */
+    private String resolveCampaignLogoUrl(Campaign c) {
+        if (c.getBrandLogoFileKey() != null && !c.getBrandLogoFileKey().isBlank()) {
+            return fileStorage.signedDownloadUrl(c.getBrandLogoFileKey());
         }
         return null;
     }

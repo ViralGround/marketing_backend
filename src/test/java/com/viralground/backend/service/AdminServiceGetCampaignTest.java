@@ -36,6 +36,7 @@ class AdminServiceGetCampaignTest {
     @Mock EscrowService escrowService;
     @Mock ApplicationSubmissionRepository submissionRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock com.viralground.backend.storage.FileStorage fileStorage;
 
     @InjectMocks
     AdminService adminService;
@@ -137,6 +138,25 @@ class AdminServiceGetCampaignTest {
         verify(applicationRepository, times(1)).countByCampaignIdIn(anyList());
         verify(applicationRepository, never())
                 .findByCampaignIdOrderByAppliedAtDesc(org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void getCampaign_은_브랜드_소개와_로고URL을_담는다() {
+        // given — 관리자 직접 생성 캠페인의 브랜드 소개·로고
+        Campaign campaign = Campaign.builder()
+                .id(5).title("c").status(CampaignStatus.OPEN).escrowStatus(EscrowStatus.FUNDED)
+                .rewardAmount(1).maxParticipants(1).totalBudget(1)
+                .brandIntroduction("브랜드 소개").brandLogoFileKey("thumbnails/brand-5").build();
+        when(campaignRepository.findById(5)).thenReturn(Optional.of(campaign));
+        when(applicationRepository.findByCampaignIdOrderByAppliedAtDesc(5)).thenReturn(List.of());
+        when(fileStorage.signedDownloadUrl("thumbnails/brand-5")).thenReturn("https://signed/brand-5");
+
+        // when
+        CampaignDetailResponse response = adminService.getCampaign(5);
+
+        // then
+        assertThat(response.getBrandIntroduction()).isEqualTo("브랜드 소개");
+        assertThat(response.getBrandLogoUrl()).isEqualTo("https://signed/brand-5");
     }
 
     private CampaignApplicationRepository.CampaignCountRow countRow(int campaignId, long count) {

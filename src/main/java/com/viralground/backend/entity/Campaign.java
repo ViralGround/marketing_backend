@@ -27,6 +27,14 @@ public class Campaign {
     @Column(name = "brand_name", nullable = false)
     private String brandName;
 
+    /** 브랜드 소개글. 관리자 직접 생성 캠페인의 회사 소개 모달에 노출되는 공개 텍스트. */
+    @Column(name = "brand_introduction", columnDefinition = "TEXT")
+    private String brandIntroduction;
+
+    /** 브랜드 로고 스토리지 키. 관리자 직접 생성 캠페인의 모달/카드 로고(원형 아바타)로 노출. */
+    @Column(name = "brand_logo_file_key")
+    private String brandLogoFileKey;
+
     @Column(name = "reward_amount", nullable = false)
     private Integer rewardAmount;
 

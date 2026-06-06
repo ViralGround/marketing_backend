@@ -17,6 +17,8 @@ public class CampaignDetailResponse {
     private final String title;
     private final String description;
     private final String brandName;
+    private final String brandIntroduction;
+    private final String brandLogoUrl;
     private final Integer rewardAmount;
     private final String thumbnailUrl;
     private final String requirements;
@@ -31,16 +33,18 @@ public class CampaignDetailResponse {
     private final List<ApplicationInfo> applications;
 
     public CampaignDetailResponse(Campaign c, List<CampaignApplication> apps, String thumbnailUrl) {
-        this(c, apps, Map.of(), thumbnailUrl);
+        this(c, apps, Map.of(), thumbnailUrl, null);
     }
 
     public CampaignDetailResponse(Campaign c, List<CampaignApplication> apps,
                                   Map<Integer, List<SubmissionHistoryItem>> submissionsByAppId,
-                                  String thumbnailUrl) {
+                                  String thumbnailUrl, String brandLogoUrl) {
         this.id = c.getId();
         this.title = c.getTitle();
         this.description = c.getDescription();
         this.brandName = c.getBrandName();
+        this.brandIntroduction = c.getBrandIntroduction();
+        this.brandLogoUrl = brandLogoUrl;
         this.rewardAmount = c.getRewardAmount();
         this.thumbnailUrl = thumbnailUrl;
         this.requirements = c.getRequirements();

@@ -49,6 +49,14 @@ public class AdminService {
         return c.getThumbnailUrl();
     }
 
+    /** 관리자 직접 생성 캠페인의 브랜드 로고 서명 URL. 없으면 null. */
+    private String resolveBrandLogoUrl(Campaign c) {
+        if (c.getBrandLogoFileKey() != null && !c.getBrandLogoFileKey().isBlank()) {
+            return fileStorage.signedDownloadUrl(c.getBrandLogoFileKey());
+        }
+        return null;
+    }
+
     // ── 회원 관리 ──────────────────────────────────
 
     public Map<String, Object> getMembers(String statusStr, String search) {
@@ -190,7 +198,8 @@ public class AdminService {
                                         java.util.stream.Collectors.mapping(
                                                 com.viralground.backend.dto.campaign.SubmissionHistoryItem::from,
                                                 java.util.stream.Collectors.toList())));
-        return new CampaignDetailResponse(campaign, apps, byAppId, resolveThumbUrl(campaign));
+        return new CampaignDetailResponse(campaign, apps, byAppId, resolveThumbUrl(campaign),
+                resolveBrandLogoUrl(campaign));
     }
 
     @Transactional
@@ -207,11 +216,17 @@ public class AdminService {
                 && !fileStorage.exists(req.getThumbnailFileKey())) {
             throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
         }
+        if (req.getBrandLogoFileKey() != null && !req.getBrandLogoFileKey().isBlank()
+                && !fileStorage.exists(req.getBrandLogoFileKey())) {
+            throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+        }
 
         Campaign.CampaignBuilder builder = Campaign.builder()
                 .title(req.getTitle())
                 .description(req.getDescription())
                 .brandName(req.getBrandName())
+                .brandIntroduction(req.getBrandIntroduction())
+                .brandLogoFileKey(req.getBrandLogoFileKey())
                 .rewardAmount(req.getRewardAmount())
                 .maxParticipants(req.getMaxParticipants())
                 .totalBudget(totalBudget)
@@ -272,6 +287,13 @@ public class AdminService {
         }
         if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
         if (req.getStatus() != null) c.setStatus(req.getStatus());
+        if (req.getBrandIntroduction() != null) c.setBrandIntroduction(req.getBrandIntroduction());
+        if (req.getBrandLogoFileKey() != null) {
+            if (!req.getBrandLogoFileKey().isBlank() && !fileStorage.exists(req.getBrandLogoFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
+            c.setBrandLogoFileKey(req.getBrandLogoFileKey().isBlank() ? null : req.getBrandLogoFileKey());
+        }
         campaignRepository.save(c);
     }
 

@@ -22,4 +22,10 @@ public class UpdateCampaignAdminRequest {
     private String thumbnailFileKey;
     private String requirements;
     private CampaignStatus status;
+
+    /** 브랜드 소개글. 전달 시 갱신. */
+    private String brandIntroduction;
+
+    /** 브랜드 로고 스토리지 키. 전달 시 갱신, 빈 문자열은 로고 제거로 본다. */
+    private String brandLogoFileKey;
 }

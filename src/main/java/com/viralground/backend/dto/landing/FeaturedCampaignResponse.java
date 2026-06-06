@@ -17,7 +17,9 @@ public record FeaturedCampaignResponse(
         Integer applicationCount,
         String thumbnailUrl,
         Integer companyMemberId,
-        /** 작성 기업의 로고 서명 URL. 없으면 null(카드는 brandName 이니셜 아바타로 폴백). */
-        String logoUrl
+        /** 로고 서명 URL: 회원 기업 로고 우선, 없으면 캠페인 브랜드 로고. 없으면 null(이니셜 폴백). */
+        String logoUrl,
+        /** 브랜드 소개글. 관리자 직접 생성 캠페인의 모달 인라인 표시용. 회원 회사 캠페인은 모달이 별도 조회. */
+        String brandIntroduction
 ) {
 }

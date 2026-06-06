@@ -34,6 +34,7 @@ class AdminServiceUpdateCampaignTest {
     @Mock EscrowService escrowService;
     @Mock ApplicationSubmissionRepository submissionRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock com.viralground.backend.storage.FileStorage fileStorage;
 
     @InjectMocks
     AdminService adminService;
@@ -115,5 +116,41 @@ class AdminServiceUpdateCampaignTest {
         verify(campaignRepository).save(captor.capture());
         assertThat(captor.getValue().getTotalBudget()).isEqualTo(50_000);
         assertThat(captor.getValue().getTitle()).isEqualTo("새 제목");
+    }
+
+    @Test
+    void should_브랜드_소개와_로고_갱신_when_전달됨() {
+        // given
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        when(fileStorage.exists("thumbnails/brand-1")).thenReturn(true);
+        UpdateCampaignAdminRequest req = new UpdateCampaignAdminRequest();
+        req.setBrandIntroduction("새 브랜드 소개");
+        req.setBrandLogoFileKey("thumbnails/brand-1");
+
+        // when
+        adminService.updateCampaign(1, req);
+
+        // then
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(captor.capture());
+        assertThat(captor.getValue().getBrandIntroduction()).isEqualTo("새 브랜드 소개");
+        assertThat(captor.getValue().getBrandLogoFileKey()).isEqualTo("thumbnails/brand-1");
+    }
+
+    @Test
+    void should_브랜드로고_제거_when_빈문자열() {
+        // given — 빈 문자열은 로고 제거
+        campaign.setBrandLogoFileKey("thumbnails/old");
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        UpdateCampaignAdminRequest req = new UpdateCampaignAdminRequest();
+        req.setBrandLogoFileKey("");
+
+        // when
+        adminService.updateCampaign(1, req);
+
+        // then
+        ArgumentCaptor<Campaign> captor = ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(captor.capture());
+        assertThat(captor.getValue().getBrandLogoFileKey()).isNull();
     }
 }

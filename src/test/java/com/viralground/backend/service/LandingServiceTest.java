@@ -205,4 +205,38 @@ class LandingServiceTest {
         // then
         assertThat(result.get(0).thumbnailUrl()).isEqualTo("https://signed/key-1");
     }
+
+    @Test
+    void getFeaturedCampaigns_admin캠페인은_brandIntroduction을_담는다() {
+        // given — createdById=20 admin 생성(프로필 없음), 브랜드 소개 보유
+        Campaign c = campaign(1, 20, 1);
+        c.setBrandIntroduction("관리자가 쓴 브랜드 소개");
+        when(campaignRepository.findFeaturedOpen(LocalDateTime.now(clock))).thenReturn(List.of(c));
+        when(applicationRepository.countByCampaignIdIn(anyList())).thenReturn(List.of());
+        when(companyProfileRepository.findByMemberIdIn(anyList())).thenReturn(List.of());
+
+        // when
+        List<FeaturedCampaignResponse> result = service().getFeaturedCampaigns();
+
+        // then
+        assertThat(result.get(0).brandIntroduction()).isEqualTo("관리자가 쓴 브랜드 소개");
+    }
+
+    @Test
+    void getFeaturedCampaigns_admin캠페인_브랜드로고를_logoUrl로_담는다() {
+        // given — 프로필 없는 admin 캠페인이 brandLogoFileKey 보유
+        Campaign c = campaign(1, 20, 1);
+        c.setBrandLogoFileKey("thumbnails/brand-logo-1");
+        when(campaignRepository.findFeaturedOpen(LocalDateTime.now(clock))).thenReturn(List.of(c));
+        when(applicationRepository.countByCampaignIdIn(anyList())).thenReturn(List.of());
+        when(companyProfileRepository.findByMemberIdIn(anyList())).thenReturn(List.of());
+        lenient().when(fileStorage.signedDownloadUrl("thumbnails/brand-logo-1"))
+                .thenReturn("https://signed/brand-logo-1");
+
+        // when
+        List<FeaturedCampaignResponse> result = service().getFeaturedCampaigns();
+
+        // then
+        assertThat(result.get(0).logoUrl()).isEqualTo("https://signed/brand-logo-1");
+    }
 }
