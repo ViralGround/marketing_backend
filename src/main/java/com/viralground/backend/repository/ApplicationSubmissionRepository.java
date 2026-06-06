@@ -14,4 +14,7 @@ public interface ApplicationSubmissionRepository extends JpaRepository<Applicati
     List<ApplicationSubmission> findByApplicationIdInOrderByApplicationIdAscSubmittedAtAsc(List<Integer> applicationIds);
 
     Optional<ApplicationSubmission> findTopByApplicationIdOrderBySubmittedAtDesc(Integer applicationId);
+
+    /** 캠페인 하드 삭제 시 지원들에 딸린 제출 이력을 일괄 제거. */
+    void deleteByApplicationIdIn(List<Integer> applicationIds);
 }

@@ -28,7 +28,7 @@ public enum ErrorCode {
     AGREEMENT_REQUIRED("AGREEMENT_REQUIRED", "필수 약관에 동의해야 가입할 수 있습니다.", HttpStatus.BAD_REQUEST),
     CAMPAIGN_NOT_FOUND("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다", HttpStatus.NOT_FOUND),
     CAMPAIGN_CLOSED("CAMPAIGN_CLOSED", "마감된 캠페인입니다.", HttpStatus.BAD_REQUEST),
-    CAMPAIGN_HAS_DEPENDENCIES("CAMPAIGN_HAS_DEPENDENCIES", "지원자 또는 예치금 거래가 있는 캠페인은 삭제할 수 없습니다. 대신 '숨김' 처리해 주세요.", HttpStatus.CONFLICT),
+    CAMPAIGN_HAS_SETTLEMENT("CAMPAIGN_HAS_SETTLEMENT", "정산(지급)이 진행된 캠페인은 삭제할 수 없습니다. 대신 '숨김' 처리해 주세요.", HttpStatus.CONFLICT),
     FEATURED_LIMIT_EXCEEDED("FEATURED_LIMIT_EXCEEDED", "대표 캠페인은 최대 3건까지 지정할 수 있습니다.", HttpStatus.BAD_REQUEST),
     APPLICATION_NOT_FOUND("APPLICATION_NOT_FOUND", "지원 내역을 찾을 수 없습니다", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("ALREADY_APPLIED", "이미 지원한 캠페인입니다", HttpStatus.CONFLICT),

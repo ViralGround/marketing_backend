@@ -31,4 +31,7 @@ public interface SubmissionMetricRepository extends JpaRepository<SubmissionMetr
             WHERE a.creatorId = :creatorId AND a.status = 'SETTLED'
             """)
     Object[] sumByCreatorId(@Param("creatorId") Integer creatorId);
+
+    /** 캠페인 하드 삭제 시 지원들에 딸린 성과 기록을 일괄 제거. */
+    void deleteByApplicationIdIn(List<Integer> applicationIds);
 }

@@ -279,14 +279,41 @@ public class AdminService {
     public void deleteCampaign(Integer id) {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-        // 지원자나 에스크로 트랜잭션이 있으면 hard delete 거부 — 회계·감사 데이터 보존.
-        // 운영자는 대신 "숨김" 처리해서 사용자 노출만 끌 수 있다.
-        long apps = applicationRepository.countByCampaignId(id);
-        long escrowTx = escrowTransactionRepository.countByCampaignId(id);
-        if (apps > 0 || escrowTx > 0) {
-            throw new AppException(ErrorCode.CAMPAIGN_HAS_DEPENDENCIES);
+        // 크리에이터에게 실제 지급(RELEASE)된 이력이 있으면 회계·감사 보존을 위해 삭제를 막고
+        // '숨김' 처리를 유도한다. 입금/환불만 있는 (테스트성) 캠페인은 안전하게 제거한다.
+        if (escrowTransactionRepository.existsByCampaignIdAndType(id, EscrowTxType.RELEASE)) {
+            throw new AppException(ErrorCode.CAMPAIGN_HAS_SETTLEMENT);
         }
+        // 단방향 연관이라 cascade 가 없어 자식 데이터를 직접 제거한다.
+        List<CampaignApplication> apps = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id);
+        List<Integer> appIds = apps.stream().map(CampaignApplication::getId).toList();
+        if (!appIds.isEmpty()) {
+            submissionRepository.deleteByApplicationIdIn(appIds);
+            metricRepository.deleteByApplicationIdIn(appIds);
+            reviewRepository.deleteByApplicationIdIn(appIds);
+        }
+        applicationRepository.deleteByCampaignId(id);
+        escrowTransactionRepository.deleteByCampaignId(id);
+        // 업로드 파일은 트랜잭션 밖 자원이라 best-effort 로 정리한다(실패해도 삭제는 진행).
+        deleteCampaignFilesQuietly(campaign, apps);
         campaignRepository.delete(campaign);
+    }
+
+    /** 캠페인·지원에 연결된 업로드 파일을 best-effort 로 제거한다. */
+    private void deleteCampaignFilesQuietly(Campaign campaign, List<CampaignApplication> apps) {
+        for (CampaignApplication a : apps) {
+            deleteFileQuietly(a.getVideoFileKey());
+        }
+        deleteFileQuietly(campaign.getThumbnailFileKey());
+    }
+
+    private void deleteFileQuietly(String fileKey) {
+        if (fileKey == null || fileKey.isBlank()) return;
+        try {
+            fileStorage.delete(fileKey);
+        } catch (Exception ignored) {
+            // best-effort: 파일 정리 실패가 DB 삭제를 막지 않는다.
+        }
     }
 
     /**
@@ -311,11 +338,12 @@ public class AdminService {
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         if (featured) {
             if (!campaign.isFeatured()) {
-                long current = campaignRepository.countByFeaturedOrderIsNotNull();
-                if (current >= 3) {
+                // 한도는 '실제 랜딩 노출 중인 대표 수' 기준 — 숨김/마감된 featured 는 한도를 소모하지 않는다.
+                if (campaignRepository.countFeaturedOpen(LocalDateTime.now()) >= 3) {
                     throw new AppException(ErrorCode.FEATURED_LIMIT_EXCEEDED);
                 }
-                campaign.setFeaturedOrder((int) current + 1);
+                // 채번은 '기존 최대 순번 + 1' — 해제 후 재지정 시 순번 충돌을 막는다.
+                campaign.setFeaturedOrder(campaignRepository.maxFeaturedOrder() + 1);
             }
         } else {
             campaign.setFeaturedOrder(null);

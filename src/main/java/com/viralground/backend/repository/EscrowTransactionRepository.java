@@ -14,10 +14,10 @@ public interface EscrowTransactionRepository extends JpaRepository<EscrowTransac
     /** 입금 확인 멱등성 체크: 이미 DEPOSIT 트랜잭션이 기록됐는지. */
     boolean existsByCampaignIdAndType(Integer campaignId, EscrowTxType type);
 
-    /** 캠페인 삭제 가드: 트랜잭션이 1건이라도 있으면 hard delete 거부. */
-    long countByCampaignId(Integer campaignId);
-
     /** type 별 총합. KPI 대시보드의 GMV/지급/환불 집계용. 결과는 {type, sum} 배열. */
     @Query("SELECT t.type, COALESCE(SUM(t.amount), 0) FROM EscrowTransaction t GROUP BY t.type")
     List<Object[]> sumAmountByType();
+
+    /** 캠페인 하드 삭제 시 해당 캠페인의 에스크로 트랜잭션을 일괄 제거. */
+    void deleteByCampaignId(Integer campaignId);
 }

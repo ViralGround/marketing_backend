@@ -21,4 +21,7 @@ public interface ReviewRepository extends JpaRepository<Review, Integer> {
     /** 전체 평점 평균. 리뷰가 없으면 null 대신 0.0 반환. KPI 대시보드용. */
     @Query("SELECT COALESCE(AVG(r.rating), 0) FROM Review r")
     Double averageRating();
+
+    /** 캠페인 하드 삭제 시 지원들에 딸린 리뷰를 일괄 제거. */
+    void deleteByApplicationIdIn(List<Integer> applicationIds);
 }

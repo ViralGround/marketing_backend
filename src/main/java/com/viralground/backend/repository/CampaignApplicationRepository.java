@@ -57,4 +57,7 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
 
     @Query("SELECT COALESCE(SUM(a.rewardPaidAmount), 0) FROM CampaignApplication a WHERE a.creatorId = :creatorId AND a.status = 'SETTLED'")
     Long sumRewardByCreatorId(Integer creatorId);
+
+    /** 캠페인 하드 삭제 시 해당 캠페인의 지원을 일괄 제거. */
+    void deleteByCampaignId(Integer campaignId);
 }
