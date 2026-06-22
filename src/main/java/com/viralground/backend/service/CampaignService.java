@@ -35,6 +35,7 @@ public class CampaignService {
     private final EmailService emailService;
     private final MemberRepository memberRepository;
     private final ApplicationSubmissionRepository submissionRepository;
+    private final CreatorInstagramConnectionRepository connectionRepository;
     private final FileStorage fileStorage;
     private final Clock clock;
 
@@ -141,8 +142,12 @@ public class CampaignService {
                 .toList();
     }
 
+    /**
+     * 작업물 제출. 반환값은 추적 모드: 크리에이터가 인스타 연동(CONNECTED)이면 {@code "AUTO"}(자동 지표 수집 대상),
+     * 미연동이면 {@code "MANUAL"}(수동 입력). 연동 여부와 무관하게 제출 자체는 막지 않는다.
+     */
     @Transactional
-    public void submitWork(Integer applicationId, Integer creatorId, SubmitWorkRequest request) {
+    public String submitWork(Integer applicationId, Integer creatorId, SubmitWorkRequest request) {
         CampaignApplication app = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
 
@@ -209,6 +214,12 @@ public class CampaignService {
                 .submissionUrl(app.getSubmissionUrl())
                 .status(SubmissionReviewStatus.SUBMITTED)
                 .build());
+
+        // 인스타 연동된 크리에이터의 제출물은 자동 추적(동기화가 지표를 채움), 미연동은 수동 추적.
+        boolean connected = connectionRepository.findByCreatorId(creatorId)
+                .map(c -> c.getStatus() == ConnectionStatus.CONNECTED)
+                .orElse(false);
+        return connected ? "AUTO" : "MANUAL";
     }
 
     @Transactional

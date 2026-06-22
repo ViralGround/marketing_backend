@@ -11,6 +11,7 @@ import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
+import com.viralground.backend.repository.CreatorInstagramConnectionRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.storage.FileStorage;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,7 @@ class CampaignServiceResubmitTest {
     @Mock EmailService emailService;
     @Mock MemberRepository memberRepository;
     @Mock ApplicationSubmissionRepository submissionRepository;
+    @Mock CreatorInstagramConnectionRepository connectionRepository;
     @Mock FileStorage fileStorage;
     @Spy Clock clock = Clock.systemDefaultZone();
 

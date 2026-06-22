@@ -6,9 +6,12 @@ import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignApplication;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
+import com.viralground.backend.entity.ConnectionStatus;
+import com.viralground.backend.entity.CreatorInstagramConnection;
 import com.viralground.backend.repository.ApplicationSubmissionRepository;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
+import com.viralground.backend.repository.CreatorInstagramConnectionRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.storage.FileStorage;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +49,8 @@ class CampaignServiceSubmitWorkTest {
     ApplicationSubmissionRepository submissionRepository;
     @Mock
     FileStorage fileStorage;
+    @Mock
+    CreatorInstagramConnectionRepository connectionRepository;
     @Spy
     Clock clock = Clock.systemDefaultZone();
 
@@ -208,5 +213,36 @@ class CampaignServiceSubmitWorkTest {
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SUBMISSION_NOT_FOUND);
         verify(applicationRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void should_trackingMode_AUTO_when_크리에이터가_인스타_연동됨() {
+        // given — creator 7 인스타 연동(CONNECTED)
+        when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(activeCampaign));
+        when(connectionRepository.findByCreatorId(7)).thenReturn(Optional.of(
+                CreatorInstagramConnection.builder().creatorId(7).status(ConnectionStatus.CONNECTED).build()));
+        SubmitWorkRequest req = new SubmitWorkRequest("https://example.com/v.mp4", null, null, null);
+
+        // when
+        String trackingMode = campaignService.submitWork(42, 7, req);
+
+        // then — 연결됨이면 자동 추적
+        assertThat(trackingMode).isEqualTo("AUTO");
+    }
+
+    @Test
+    void should_trackingMode_MANUAL_when_크리에이터_미연동() {
+        // given — 연동 레코드 없음
+        when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(activeCampaign));
+        when(connectionRepository.findByCreatorId(7)).thenReturn(Optional.empty());
+        SubmitWorkRequest req = new SubmitWorkRequest("https://example.com/v.mp4", null, null, null);
+
+        // when
+        String trackingMode = campaignService.submitWork(42, 7, req);
+
+        // then — 미연결이면 수동 추적(제출은 막지 않음)
+        assertThat(trackingMode).isEqualTo("MANUAL");
     }
 }

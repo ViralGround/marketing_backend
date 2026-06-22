@@ -4,6 +4,7 @@ import com.viralground.backend.config.AuthUser;
 import com.viralground.backend.dto.admin.CampaignDetailResponse;
 import com.viralground.backend.dto.admin.ContactRequestResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
+import com.viralground.backend.dto.admin.ReelAnalyticsResponse;
 import com.viralground.backend.dto.admin.UpdateApplicationStatusRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignAdminRequest;
 import com.viralground.backend.dto.admin.UpdateCampaignFeaturedRequest;
@@ -14,6 +15,9 @@ import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.service.AdminService;
 import com.viralground.backend.service.ContactService;
 import com.viralground.backend.service.EscrowService;
+import com.viralground.backend.service.ReelAnalyticsService;
+import com.viralground.backend.service.ReelMetricSyncService;
+import com.viralground.backend.service.ReelMetricSyncService.SyncResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -32,12 +36,28 @@ public class AdminController {
     private final AdminService adminService;
     private final EscrowService escrowService;
     private final ContactService contactService;
+    private final ReelAnalyticsService reelAnalyticsService;
+    private final ReelMetricSyncService reelMetricSyncService;
 
     // ── 대시보드 KPI ──────────────────────────────────
 
     @GetMapping("/dashboard/kpi")
     ResponseEntity<Map<String, Object>> getKpi() {
         return ResponseEntity.ok(adminService.getKpi());
+    }
+
+    // ── 릴스 분석 대시보드 ──────────────────────────────────
+
+    @GetMapping("/reel-analytics")
+    ResponseEntity<ReelAnalyticsResponse> getReelAnalytics() {
+        return ResponseEntity.ok(reelAnalyticsService.getDashboard());
+    }
+
+    /** 연동 크리에이터 릴스 지표를 즉시 동기화(스냅샷 적재). 대시보드 "지금 동기화" 버튼. */
+    @PostMapping("/reel-analytics/sync")
+    ResponseEntity<Map<String, Integer>> syncReelAnalytics() {
+        SyncResult result = reelMetricSyncService.syncAll();
+        return ResponseEntity.ok(Map.of("synced", result.synced(), "failed", result.failed()));
     }
 
     // ── 회원 관리 ──────────────────────────────────

@@ -32,6 +32,9 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
 
     List<CampaignApplication> findByCampaignIdOrderByAppliedAtDesc(Integer campaignId);
 
+    /** 릴스(submissionUrl)가 등록된 모든 지원 — 관리자 릴스 분석 대시보드용. */
+    List<CampaignApplication> findBySubmissionUrlIsNotNull();
+
     long countByCreatorIdAndStatus(Integer creatorId, ApplicationStatus status);
 
     long countByCreatorId(Integer creatorId);

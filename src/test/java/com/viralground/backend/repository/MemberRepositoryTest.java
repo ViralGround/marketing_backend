@@ -53,7 +53,9 @@ class MemberRepositoryTest {
     @Test
     void findMemberStats_total_today_week_를_단일_쿼리로_집계한다() {
         // given — 오늘 가입 2명, 이번 주(7일 이내) 가입 1명 추가, 한 달 전 1명. 총 4명.
-        LocalDateTime now = LocalDateTime.now();
+        // 고정 시각 사용 — LocalDateTime.now() 면 자정 직후엔 now.minusHours(1) 가 어제로 넘어가
+        // todayCount 가 흔들린다(자정 경계 flaky). 경계에서 먼 평일 정오로 고정.
+        LocalDateTime now = LocalDateTime.of(2026, 1, 15, 12, 0);
         LocalDateTime todayStart = now.toLocalDate().atStartOfDay();
         LocalDateTime weekAgo = now.minusDays(7);
 

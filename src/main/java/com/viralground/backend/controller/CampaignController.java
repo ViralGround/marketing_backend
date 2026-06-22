@@ -64,8 +64,10 @@ public class CampaignController {
             @PathVariable Integer id,
             @RequestBody SubmitWorkRequest body,
             @AuthenticationPrincipal AuthUser authUser) {
-        campaignService.submitWork(id, authUser.getId(), body);
-        return ResponseEntity.ok(Map.of("message", "제출이 완료되었습니다."));
+        String trackingMode = campaignService.submitWork(id, authUser.getId(), body);
+        return ResponseEntity.ok(Map.of(
+                "message", "제출이 완료되었습니다.",
+                "trackingMode", trackingMode));
     }
 
     @DeleteMapping("/me")
