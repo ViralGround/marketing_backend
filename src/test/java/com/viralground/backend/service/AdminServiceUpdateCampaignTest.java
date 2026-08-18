@@ -153,4 +153,16 @@ class AdminServiceUpdateCampaignTest {
         verify(campaignRepository).save(captor.capture());
         assertThat(captor.getValue().getBrandLogoFileKey()).isNull();
     }
+
+    @Test
+    void should_INVALID_CAMPAIGN_INPUT_when_예산_곱셈이_int_범위를_초과() {
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        UpdateCampaignAdminRequest req = new UpdateCampaignAdminRequest();
+        req.setRewardAmount(100_000_000);
+        req.setMaxParticipants(10_000);
+
+        assertThatThrownBy(() -> adminService.updateCampaign(1, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+    }
 }

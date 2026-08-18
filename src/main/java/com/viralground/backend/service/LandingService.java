@@ -1,14 +1,23 @@
 package com.viralground.backend.service;
 
 import com.viralground.backend.dto.landing.CompanyPublicResponse;
+import com.viralground.backend.dto.landing.CreatorPublicResponse;
 import com.viralground.backend.dto.landing.FeaturedCampaignResponse;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CompanyProfile;
+import com.viralground.backend.entity.CreatorProfile;
+import com.viralground.backend.entity.Member;
+import com.viralground.backend.entity.MemberStatus;
+import com.viralground.backend.entity.Role;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.CompanyProfileRepository;
+import com.viralground.backend.repository.CreatorProfileRepository;
+import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.repository.ReviewRepository;
+import com.viralground.backend.repository.SubmissionMetricRepository;
 import com.viralground.backend.storage.FileStorage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,6 +27,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -31,9 +41,16 @@ public class LandingService {
     /** 랜딩에 노출할 대표 캠페인 최대 건수. 지정은 더 될 수 있어도 카드는 이 수만큼만. */
     private static final int FEATURED_LIMIT = 3;
 
+    /** 공개 크리에이터 풀 목록 최대 건수. */
+    private static final int CREATOR_LIMIT = 24;
+
     private final CampaignRepository campaignRepository;
     private final CampaignApplicationRepository applicationRepository;
     private final CompanyProfileRepository companyProfileRepository;
+    private final CreatorProfileRepository creatorProfileRepository;
+    private final MemberRepository memberRepository;
+    private final ReviewRepository reviewRepository;
+    private final SubmissionMetricRepository metricRepository;
     private final FileStorage fileStorage;
     private final Clock clock;
 
@@ -82,8 +99,70 @@ public class LandingService {
                 .toList();
     }
 
+    /**
+     * 공개 크리에이터 풀 — 완료(SETTLED) 캠페인이 1건 이상인 크리에이터를 완료 수 순으로.
+     * 브랜드에는 "실제로 뛰는 크리에이터가 있다"는 구매 근거, 크리에이터에는
+     * "내 프로필이 브랜드에 노출된다"는 가입 동기가 된다.
+     */
+    @Transactional(readOnly = true)
+    public List<CreatorPublicResponse> getPublicCreators() {
+        List<CampaignApplicationRepository.CreatorCompletedRow> rows =
+                applicationRepository.countSettledGroupedByCreator();
+        if (rows.isEmpty()) return List.of();
+
+        List<Integer> creatorIds = rows.stream()
+                .map(CampaignApplicationRepository.CreatorCompletedRow::getCreatorId)
+                .toList();
+        Set<Integer> publicCreatorIds = creatorProfileRepository
+                .findByMemberIdInAndPublicProfileOptInTrue(creatorIds).stream()
+                .map(CreatorProfile::getMemberId)
+                .collect(Collectors.toSet());
+        if (publicCreatorIds.isEmpty()) return List.of();
+
+        Map<Integer, Member> memberById = memberRepository.findAllById(creatorIds).stream()
+                .collect(Collectors.toMap(Member::getId, m -> m));
+
+        // [targetId, avgRating, count] / [creatorId, totalViews, sampleSize]
+        Map<Integer, double[]> ratingByCreator = reviewRepository.ratingByTargetIds(creatorIds).stream()
+                .collect(Collectors.toMap(
+                        r -> (Integer) r[0],
+                        r -> new double[]{((Number) r[1]).doubleValue(), ((Number) r[2]).doubleValue()}));
+        Map<Integer, long[]> metricByCreator = metricRepository.sumSettledByCreatorIds(creatorIds).stream()
+                .collect(Collectors.toMap(
+                        r -> (Integer) r[0],
+                        r -> new long[]{((Number) r[1]).longValue(), ((Number) r[2]).longValue()}));
+
+        return rows.stream()
+                .map(row -> {
+                    Member member = memberById.get(row.getCreatorId());
+                    if (member == null || !publicCreatorIds.contains(row.getCreatorId())
+                            || member.getRole() != Role.CREATOR
+                            || member.getStatus() != MemberStatus.APPROVED) return null;
+                    double[] rating = ratingByCreator.get(row.getCreatorId());
+                    long[] metric = metricByCreator.get(row.getCreatorId());
+                    long totalViews = metric != null ? metric[0] : 0L;
+                    long sampleSize = metric != null ? metric[1] : 0L;
+                    return new CreatorPublicResponse(
+                            member.getId(),
+                            member.getName(),
+                            member.getCreatedAt(),
+                            row.getCompleted().intValue(),
+                            rating != null ? (int) rating[1] : 0,
+                            rating != null ? Math.round(rating[0] * 10) / 10.0 : 0.0,
+                            totalViews,
+                            sampleSize == 0 ? 0L : totalViews / sampleSize);
+                })
+                .filter(java.util.Objects::nonNull)
+                .limit(CREATOR_LIMIT)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public CompanyPublicResponse getCompanyPublic(Integer memberId) {
+        memberRepository.findById(memberId)
+                .filter(member -> member.getRole() == Role.COMPANY
+                        && member.getStatus() == MemberStatus.APPROVED)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         CompanyProfile profile = companyProfileRepository.findByMemberId(memberId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 

@@ -181,6 +181,31 @@ class LocalFileStorageTest {
     }
 
     @Test
+    void should_객체정보_정확히일치_when_verifyUploadedObject() {
+        PresignedUpload presigned = storage.presignUpload("video/mp4", 5L);
+        Map<String, String> q = parseQuery(presigned.uploadUrl());
+        byte[] payload = "12345".getBytes(StandardCharsets.UTF_8);
+        storage.acceptUpload(presigned.fileKey(), q.get("sig"), Long.parseLong(q.get("exp")),
+                new ByteArrayInputStream(payload), "video/mp4", payload.length);
+
+        storage.verifyUploadedObject(presigned.fileKey(), "video/mp4", payload.length);
+    }
+
+    @Test
+    void should_UPLOAD_OBJECT_MISMATCH_when_발급용량과_실제파일이_다름() {
+        PresignedUpload presigned = storage.presignUpload("video/mp4", 5L);
+        Map<String, String> q = parseQuery(presigned.uploadUrl());
+        byte[] payload = "1234".getBytes(StandardCharsets.UTF_8);
+        storage.acceptUpload(presigned.fileKey(), q.get("sig"), Long.parseLong(q.get("exp")),
+                new ByteArrayInputStream(payload), "video/mp4", payload.length);
+
+        assertThatThrownBy(() -> storage.verifyUploadedObject(
+                presigned.fileKey(), "video/mp4", 5L))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.UPLOAD_OBJECT_MISMATCH);
+    }
+
+    @Test
     void should_VIDEO_TOO_LARGE_예외_when_스트림이_상한_초과() {
         // given — Content-Length 는 정상이지만 실제 스트림이 max 를 초과하는 케이스
         props.setMaxSizeBytes(16);

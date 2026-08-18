@@ -1,6 +1,5 @@
 package com.viralground.backend.service;
 
-import com.viralground.backend.dto.campaign.SubmissionHistoryItem;
 import com.viralground.backend.dto.company.CompanyApplicationActionRequest;
 import com.viralground.backend.dto.company.CompanyCampaignCreateRequest;
 import com.viralground.backend.dto.company.CompanyCampaignResponse;
@@ -26,6 +25,10 @@ import com.viralground.backend.repository.CompanyProfileRepository;
 import com.viralground.backend.repository.EscrowTransactionRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.storage.FileStorage;
+import com.viralground.backend.storage.UploadOwnershipService;
+import com.viralground.backend.payment.PaymentActor;
+import com.viralground.backend.validation.CampaignBudgetPolicy;
+import com.viralground.backend.validation.PublicUrlPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -49,6 +52,7 @@ public class CompanyService {
     private final ApplicationEventPublisher eventPublisher;
     private final ApplicationSubmissionRepository submissionRepository;
     private final FileStorage fileStorage;
+    private final UploadOwnershipService uploadOwnershipService;
     private final CompanyProfileRepository companyProfileRepository;
 
     private String resolveThumbUrl(Campaign c) {
@@ -63,6 +67,11 @@ public class CompanyService {
             return fileStorage.signedDownloadUrl(p.getLogoFileKey());
         }
         return null;
+    }
+
+    private String resolveVideoUrl(String fileKey) {
+        return fileKey == null || fileKey.isBlank()
+                ? null : fileStorage.signedDownloadUrl(fileKey);
     }
 
     @Transactional(readOnly = true)
@@ -82,33 +91,40 @@ public class CompanyService {
     public void updateMyProfile(Integer memberId, UpdateCompanyProfileRequest req) {
         CompanyProfile p = companyProfileRepository.findByMemberId(memberId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-        if (req.getIntroduction() != null) p.setIntroduction(req.getIntroduction());
-        if (req.getIndustry() != null) p.setIndustry(req.getIndustry());
-        if (req.getHomepage() != null) p.setHomepage(req.getHomepage());
+        String normalizedHomepage = req.getHomepage() == null
+                ? null : PublicUrlPolicy.normalizeOptional(req.getHomepage());
         if (req.getLogoFileKey() != null) {
-            if (req.getLogoFileKey().isBlank()) {
-                p.setLogoFileKey(null);
-            } else {
+            if (!req.getLogoFileKey().isBlank()) {
+                uploadOwnershipService.requireOwnedUpload(req.getLogoFileKey(), memberId);
                 if (!fileStorage.exists(req.getLogoFileKey())) {
                     throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
                 }
-                p.setLogoFileKey(req.getLogoFileKey());
             }
+        }
+
+        if (req.getIntroduction() != null) p.setIntroduction(req.getIntroduction());
+        if (req.getIndustry() != null) p.setIndustry(req.getIndustry());
+        if (req.getHomepage() != null) p.setHomepage(normalizedHomepage);
+        if (req.getLogoFileKey() != null) {
+            p.setLogoFileKey(req.getLogoFileKey().isBlank() ? null : req.getLogoFileKey());
         }
         companyProfileRepository.save(p);
     }
 
     @Transactional
     public CompanyCampaignResponse createCampaign(Integer companyMemberId, CompanyCampaignCreateRequest req) {
-        if (req.getRewardAmount() == null || req.getMaxParticipants() == null) {
-            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
-        }
-        int totalBudget = req.getRewardAmount() * req.getMaxParticipants();
+        int totalBudget = CampaignBudgetPolicy.totalBudget(
+                req.getRewardAmount(), req.getMaxParticipants());
 
         String thumbnailFileKey = req.getThumbnailFileKey();
-        if (thumbnailFileKey != null && !thumbnailFileKey.isBlank()
-                && !fileStorage.exists(thumbnailFileKey)) {
-            throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+        if (thumbnailFileKey != null && thumbnailFileKey.isBlank()) {
+            thumbnailFileKey = null;
+        }
+        if (thumbnailFileKey != null) {
+            uploadOwnershipService.requireOwnedUpload(thumbnailFileKey, companyMemberId);
+            if (!fileStorage.exists(thumbnailFileKey)) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
         }
 
         Campaign saved = campaignRepository.save(Campaign.builder()
@@ -160,27 +176,37 @@ public class CompanyService {
                     .collect(Collectors.toMap(Member::getId, m -> m));
 
         List<Integer> appIds = apps.stream().map(CampaignApplication::getId).toList();
-        Map<Integer, List<SubmissionHistoryItem>> historyByAppId = appIds.isEmpty()
+        Map<Integer, List<CompanyCampaignResponse.CompanySubmissionItem>> historyByAppId = appIds.isEmpty()
                 ? Map.of()
                 : submissionRepository
                         .findByApplicationIdInOrderByApplicationIdAscSubmittedAtAsc(appIds).stream()
                         .collect(Collectors.groupingBy(
                                 ApplicationSubmission::getApplicationId,
-                                Collectors.mapping(SubmissionHistoryItem::from, Collectors.toList())));
+                                Collectors.mapping(s -> new CompanyCampaignResponse.CompanySubmissionItem(
+                                        s.getId(),
+                                        resolveVideoUrl(s.getVideoFileKey()),
+                                        s.getVideoContentType(),
+                                        s.getVideoSizeBytes(),
+                                        s.getSubmissionUrl(),
+                                        s.getStatus(),
+                                        s.getReviewComment(),
+                                        s.getSubmittedAt(),
+                                        s.getReviewedAt()), Collectors.toList())));
 
         List<CompanyCampaignResponse.ApplicationItem> applicationItems = apps.stream()
                 .map(a -> {
                     Member cr = creatorById.get(a.getCreatorId());
                     CompanyCampaignResponse.CreatorInfo info = cr == null
-                            ? new CompanyCampaignResponse.CreatorInfo(a.getCreatorId(), "(알 수 없음)", "")
-                            : new CompanyCampaignResponse.CreatorInfo(cr.getId(), cr.getName(), cr.getEmail());
-                    List<SubmissionHistoryItem> history = historyByAppId.getOrDefault(a.getId(), List.of());
+                            ? new CompanyCampaignResponse.CreatorInfo(a.getCreatorId(), "(알 수 없음)")
+                            : new CompanyCampaignResponse.CreatorInfo(cr.getId(), cr.getName());
+                    List<CompanyCampaignResponse.CompanySubmissionItem> history =
+                            historyByAppId.getOrDefault(a.getId(), List.of());
                     return new CompanyCampaignResponse.ApplicationItem(
                             a.getId(),
                             a.getStatus(),
                             a.getMessage(),
                             a.getSubmissionUrl(),
-                            a.getVideoFileKey(),
+                            resolveVideoUrl(a.getVideoFileKey()),
                             a.getResubmissionCount(),
                             a.getReviewComment(),
                             a.getRewardPaidAmount(),
@@ -224,36 +250,43 @@ public class CompanyService {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
 
-        if (req.getTitle() != null) c.setTitle(req.getTitle());
-        if (req.getDescription() != null) c.setDescription(req.getDescription());
-        if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
         if (req.getThumbnailFileKey() != null) {
-            if (!req.getThumbnailFileKey().isBlank() && !fileStorage.exists(req.getThumbnailFileKey())) {
-                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            if (!req.getThumbnailFileKey().isBlank()) {
+                uploadOwnershipService.requireOwnedUpload(
+                        req.getThumbnailFileKey(), companyMemberId);
+                if (!fileStorage.exists(req.getThumbnailFileKey())) {
+                    throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+                }
             }
-            c.setThumbnailFileKey(req.getThumbnailFileKey().isBlank() ? null : req.getThumbnailFileKey());
         }
-        if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
-        if (req.getDeadline() != null) c.setDeadline(req.getDeadline());
 
         boolean budgetFieldsIncluded = req.getRewardAmount() != null || req.getMaxParticipants() != null;
+        Integer rewardAmount = c.getRewardAmount();
+        Integer maxParticipants = c.getMaxParticipants();
+        Integer totalBudget = null;
         if (budgetFieldsIncluded) {
             if (c.getEscrowStatus() != EscrowStatus.PENDING_DEPOSIT) {
                 throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
             }
-            if (req.getRewardAmount() != null) {
-                if (req.getRewardAmount() < 0) {
-                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
-                }
-                c.setRewardAmount(req.getRewardAmount());
-            }
-            if (req.getMaxParticipants() != null) {
-                if (req.getMaxParticipants() < 1) {
-                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
-                }
-                c.setMaxParticipants(req.getMaxParticipants());
-            }
-            c.setTotalBudget(c.getRewardAmount() * c.getMaxParticipants());
+            rewardAmount = req.getRewardAmount() != null
+                    ? req.getRewardAmount() : c.getRewardAmount();
+            maxParticipants = req.getMaxParticipants() != null
+                    ? req.getMaxParticipants() : c.getMaxParticipants();
+            totalBudget = CampaignBudgetPolicy.totalBudget(rewardAmount, maxParticipants);
+        }
+
+        if (req.getTitle() != null) c.setTitle(req.getTitle());
+        if (req.getDescription() != null) c.setDescription(req.getDescription());
+        if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
+        if (req.getThumbnailFileKey() != null) {
+            c.setThumbnailFileKey(req.getThumbnailFileKey().isBlank() ? null : req.getThumbnailFileKey());
+        }
+        if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
+        if (req.getDeadline() != null) c.setDeadline(req.getDeadline());
+        if (budgetFieldsIncluded) {
+            c.setRewardAmount(rewardAmount);
+            c.setMaxParticipants(maxParticipants);
+            c.setTotalBudget(totalBudget);
         }
 
         Campaign saved = campaignRepository.save(c);
@@ -286,7 +319,9 @@ public class CompanyService {
         }
 
         if (es == EscrowStatus.FUNDED) {
-            escrowService.refund(campaignId);
+            escrowService.refund(
+                    campaignId, PaymentActor.company(companyMemberId), "기업 캠페인 취소 환불",
+                    "refund:campaign:" + campaignId);
         } else {
             c.setEscrowStatus(EscrowStatus.REFUNDED);
             c.setRefundedAt(LocalDateTime.now());
@@ -323,7 +358,7 @@ public class CompanyService {
                 app.setReviewedAt(LocalDateTime.now());
                 publishApplicationResult(app, campaign, "REJECTED", null, null);
             }
-            case SETTLE, APPROVE_VIDEO -> {
+            case APPROVE_VIDEO -> {
                 if (app.getStatus() != ApplicationStatus.SUBMITTED) {
                     throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
                 }
@@ -333,7 +368,10 @@ public class CompanyService {
                 if (payout <= 0 || payout > campaign.getRewardAmount()) {
                     throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
                 }
-                escrowService.release(campaign.getId(), app.getId(), payout);
+                escrowService.release(
+                        campaign.getId(), app.getId(), payout,
+                        PaymentActor.company(companyMemberId), "기업 콘텐츠 승인 및 정산",
+                        "release:campaign:" + campaign.getId() + ":application:" + app.getId());
                 app.setStatus(ApplicationStatus.SETTLED);
                 app.setRewardPaidAmount(payout);
                 app.setSettledAt(LocalDateTime.now());
@@ -367,15 +405,6 @@ public class CompanyService {
                 markLatestSubmission(app.getId(), companyMemberId,
                         SubmissionReviewStatus.REJECTED, req.getReviewComment());
                 publishApplicationResult(app, campaign, "REJECTED", null, req.getReviewComment());
-            }
-            case REQUEST_REREVIEW -> {
-                // [deprecated] REQUEST_CHANGES 로 마이그레이션 이후 사용하지 않음.
-                if (app.getStatus() != ApplicationStatus.SUBMITTED) {
-                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
-                }
-                app.setStatus(ApplicationStatus.APPROVED);
-                app.setSubmissionUrl(null);
-                app.setSubmittedAt(null);
             }
         }
 

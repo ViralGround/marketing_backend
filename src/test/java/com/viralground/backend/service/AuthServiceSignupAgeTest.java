@@ -8,6 +8,7 @@ import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.CompanyProfileRepository;
 import com.viralground.backend.repository.CreatorProfileRepository;
 import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.repository.RefreshTokenRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,6 +30,8 @@ class AuthServiceSignupAgeTest {
     @Mock JwtService jwtService;
     @Mock EmailVerificationService emailVerificationService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock RefreshTokenRepository refreshTokenRepository;
+    @Mock LegalConsentService legalConsentService;
 
     @InjectMocks
     AuthService authService;
@@ -45,7 +48,7 @@ class AuthServiceSignupAgeTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.UNDERAGE);
 
         verifyNoInteractions(emailVerificationService, memberRepository,
-                creatorProfileRepository, passwordEncoder);
+                creatorProfileRepository, passwordEncoder, legalConsentService);
     }
 
     @Test

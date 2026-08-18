@@ -15,6 +15,12 @@ public interface FileStorage {
     void delete(String fileKey);
 
     /**
+     * presigned PUT 이후 실제 객체의 key, Content-Type, Content-Length를 저장소에서
+     * 다시 조회해 발급 당시 값과 정확히 일치하는지 검증한다.
+     */
+    void verifyUploadedObject(String fileKey, String expectedContentType, long expectedSizeBytes);
+
+    /**
      * 해당 키의 파일이 실제로 업로드되어 존재하는지 확인.
      * submitWork 시 클라이언트가 임의의 문자열을 fileKey 로 보내도 빈 파일 참조가 저장되지 않게 막는다.
      */

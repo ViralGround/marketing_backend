@@ -52,7 +52,7 @@ public class LocalFileStorage implements FileStorage {
 
     public LocalFileStorage(FileStorageProperties props,
                             Clock clock,
-                            @Value("${jwt.secret}") String signingSecret) {
+                            @Value("${files.signing-secret}") String signingSecret) {
         this.props = props;
         this.clock = clock;
         this.signingSecret = signingSecret;
@@ -113,6 +113,28 @@ public class LocalFileStorage implements FileStorage {
     }
 
     @Override
+    public void verifyUploadedObject(String fileKey, String expectedContentType,
+                                     long expectedSizeBytes) {
+        Path path;
+        try {
+            path = resolve(fileKey);
+            if (!Files.isRegularFile(path)) {
+                throw new AppException(ErrorCode.UPLOAD_NOT_FOUND);
+            }
+            long actualSize = Files.size(path);
+            String actualContentType = inferContentType(fileKey);
+            if (actualSize != expectedSizeBytes
+                    || !actualContentType.equalsIgnoreCase(expectedContentType)) {
+                throw new AppException(ErrorCode.UPLOAD_OBJECT_MISMATCH);
+            }
+        } catch (AppException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new IllegalStateException("로컬 업로드 검증 실패", e);
+        }
+    }
+
+    @Override
     public boolean exists(String fileKey) {
         if (fileKey == null || fileKey.isBlank()) return false;
         try {
@@ -135,6 +157,9 @@ public class LocalFileStorage implements FileStorage {
             validateImageUpload(contentType, sizeBytes);
         } else {
             validateUpload(contentType, sizeBytes);
+        }
+        if (!contentTypeMatchesKey(fileKey, contentType)) {
+            throw new AppException(ErrorCode.UPLOAD_OBJECT_MISMATCH);
         }
         long maxBytes = isImage ? props.getMaxImageSizeBytes() : props.getMaxSizeBytes();
         ErrorCode tooLarge = isImage ? ErrorCode.IMAGE_TOO_LARGE : ErrorCode.VIDEO_TOO_LARGE;
@@ -263,5 +288,12 @@ public class LocalFileStorage implements FileStorage {
             case "webp" -> "image/webp";
             default -> "application/octet-stream";
         };
+    }
+
+    private static boolean contentTypeMatchesKey(String fileKey, String contentType) {
+        String expectedExtension = EXT_BY_TYPE.get(contentType);
+        if (expectedExtension == null) expectedExtension = EXT_BY_IMAGE_TYPE.get(contentType);
+        return expectedExtension != null && fileKey != null
+                && fileKey.toLowerCase().endsWith("." + expectedExtension);
     }
 }

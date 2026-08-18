@@ -12,7 +12,12 @@ import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.service.CompanyService;
 import com.viralground.backend.service.EscrowService;
+import com.viralground.backend.service.AccountWithdrawalService;
+import com.viralground.backend.service.AuthCookieService;
+import com.viralground.backend.logging.AuditAction;
+import com.viralground.backend.logging.AuditService;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +33,9 @@ public class CompanyController {
 
     private final CompanyService companyService;
     private final EscrowService escrowService;
+    private final AuditService auditService;
+    private final AccountWithdrawalService accountWithdrawalService;
+    private final AuthCookieService authCookieService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> dashboard(@AuthenticationPrincipal AuthUser authUser) {
@@ -47,7 +55,21 @@ public class CompanyController {
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
         companyService.updateMyProfile(authUser.getId(), req);
+        auditService.record(authUser, AuditAction.PROFILE_CHANGED,
+                "companyProfile", authUser.getId(), "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "회사 정보가 저장되었습니다."));
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> withdrawAccount(
+            @AuthenticationPrincipal AuthUser authUser,
+            HttpServletResponse response) {
+        requireCompany(authUser);
+        accountWithdrawalService.withdrawCompany(authUser.getId());
+        auditService.record(authUser, AuditAction.MEMBER_WITHDRAWN,
+                "member", authUser.getId(), "SUCCESS", "self-service");
+        authCookieService.clear(response);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/campaigns")
@@ -61,8 +83,10 @@ public class CompanyController {
             @Valid @RequestBody CompanyCampaignCreateRequest req,
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(companyService.createCampaign(authUser.getId(), req));
+        CompanyCampaignResponse created = companyService.createCampaign(authUser.getId(), req);
+        auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
+                "campaign", created.getId(), "SUCCESS", "CREATED");
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @GetMapping("/campaigns/{id}")
@@ -79,6 +103,8 @@ public class CompanyController {
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
         escrowService.requestDeposit(id, authUser.getId());
+        auditService.record(authUser, AuditAction.PAYMENT_STATE_CHANGED,
+                "campaign", id, "SUCCESS", "DEPOSIT_REQUESTED");
         return ResponseEntity.ok(Map.of("message", "입금 확인을 요청했습니다. 관리자 검토 후 모집이 시작됩니다."));
     }
 
@@ -88,7 +114,10 @@ public class CompanyController {
             @RequestBody CompanyCampaignUpdateRequest req,
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
-        return ResponseEntity.ok(companyService.updateCampaign(id, authUser.getId(), req));
+        CompanyCampaignResponse updated = companyService.updateCampaign(id, authUser.getId(), req);
+        auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
+                "campaign", id, "SUCCESS", "UPDATED");
+        return ResponseEntity.ok(updated);
     }
 
     @DeleteMapping("/campaigns/{id}")
@@ -97,6 +126,8 @@ public class CompanyController {
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
         companyService.deleteCampaign(id, authUser.getId());
+        auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
+                "campaign", id, "SUCCESS", "DELETED");
         return ResponseEntity.noContent().build();
     }
 
@@ -106,6 +137,8 @@ public class CompanyController {
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
         companyService.cancelCampaign(id, authUser.getId());
+        auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
+                "campaign", id, "SUCCESS", "CANCELLED");
         return ResponseEntity.ok(Map.of("message", "캠페인이 취소되었습니다."));
     }
 
@@ -116,6 +149,8 @@ public class CompanyController {
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
         companyService.manageApplication(id, authUser.getId(), req);
+        auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
+                "campaignApplication", id, "SUCCESS", req.getAction().name());
         return ResponseEntity.ok(Map.of("message", "지원 상태가 변경되었습니다."));
     }
 

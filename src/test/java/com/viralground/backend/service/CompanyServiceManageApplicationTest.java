@@ -11,6 +11,7 @@ import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.EscrowTransactionRepository;
 import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.payment.PaymentActor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +20,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import com.viralground.backend.storage.UploadOwnershipService;
 
 import java.util.Optional;
 
@@ -37,6 +39,7 @@ class CompanyServiceManageApplicationTest {
     @Mock EscrowService escrowService;
     @Mock EscrowTransactionRepository escrowTransactionRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock UploadOwnershipService uploadOwnershipService;
     @Mock ApplicationSubmissionRepository submissionRepository;
 
     @InjectMocks
@@ -122,7 +125,9 @@ class CompanyServiceManageApplicationTest {
         companyService.manageApplication(10, 50, req);
 
         // then
-        verify(escrowService).release(1, 10, 30_000);
+        verify(escrowService).release(eq(1), eq(10), eq(30_000),
+                eq(PaymentActor.company(50)), eq("기업 콘텐츠 승인 및 정산"),
+                eq("release:campaign:1:application:10"));
         assertThat(submittedApp.getStatus()).isEqualTo(ApplicationStatus.SETTLED);
         assertThat(submittedApp.getRewardPaidAmount()).isEqualTo(30_000);
     }
@@ -145,7 +150,7 @@ class CompanyServiceManageApplicationTest {
 
         // then
         assertThat(submittedApp.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
-        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt());
+        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt(), any(), anyString(), anyString());
         ArgumentCaptor<ApplicationSubmission> sc = ArgumentCaptor.forClass(ApplicationSubmission.class);
         verify(submissionRepository).save(sc.capture());
         assertThat(sc.getValue().getStatus()).isEqualTo(SubmissionReviewStatus.REJECTED);
@@ -163,6 +168,6 @@ class CompanyServiceManageApplicationTest {
         // when & then
         assertThatThrownBy(() -> companyService.manageApplication(10, 50, req))
                 .isInstanceOf(AppException.class);
-        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt());
+        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt(), any(), anyString(), anyString());
     }
 }

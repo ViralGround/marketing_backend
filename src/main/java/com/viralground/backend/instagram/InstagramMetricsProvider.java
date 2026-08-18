@@ -1,9 +1,8 @@
 package com.viralground.backend.instagram;
 
 /**
- * 릴스 지표 공급자. 현재는 {@link MockInstagramMetricsProvider}(가짜 지표),
- * 실제 인스타그램 Graph API 연동 시 이 인터페이스의 구현만 교체한다.
- * (결제의 PaymentGateway / MockPaymentGateway 와 동일한 교체 패턴.)
+ * 로컬 개발에서만 사용하는 결정적 릴스 지표 공급 포트.
+ * 운영 지표는 {@link InstagramConnectionProvider}의 Meta 구현을 통해 직접 가져온다.
  */
 public interface InstagramMetricsProvider {
 

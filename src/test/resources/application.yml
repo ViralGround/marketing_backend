@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:viralground-tests;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+
+app:
+  environment: test
+  url: http://localhost:3000
+  admin-emails: ""
+jwt:
+  secret: test-secret-key-at-least-32-characters-long
+  access-expiry: 3600
+  refresh-expiry: 604800
+resend:
+  api-key: test
+  from: test@example.com
+email:
+  mock: true
+cors:
+  allowed-origins: http://localhost:3000
+files:
+  storage: local
+  public-base-url: http://localhost:8080
+  signing-secret: separate-test-file-signing-secret-32chars
+  local:
+    directory: ./build/test-uploads
+payments:
+  gateway: mock
+instagram:
+  provider: mock
+  environment: test
+logging:
+  structured:
+    format:
+      console: ""
+  level:
+    root: WARN

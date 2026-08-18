@@ -20,4 +20,6 @@ public class UpdateProfileRequest {
 
     private String profileImage;
     private String instagramId;
+    @NotNull(message = "공개 프로필 노출 여부를 선택해주세요")
+    private Boolean publicProfileOptIn;
 }

@@ -13,6 +13,8 @@ import com.viralground.backend.repository.ReelMetricSnapshotRepository;
 import com.viralground.backend.service.ReelMetricSyncService.SyncResult;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -47,6 +49,10 @@ class ReelMetricSyncServiceTest {
     private final ReelMetricSyncService service = new ReelMetricSyncService(
             connectionRepository, applicationRepository, snapshotRepository, connectionProvider, clock);
 
+    {
+        ReflectionTestUtils.setField(service, "maxItemsPerRun", 200);
+    }
+
     private CreatorInstagramConnection connection(int creatorId) {
         return CreatorInstagramConnection.builder()
                 .id(creatorId).creatorId(creatorId).status(ConnectionStatus.CONNECTED).build();
@@ -63,7 +69,7 @@ class ReelMetricSyncServiceTest {
                 .thenReturn(List.of(connection(1)));
         CampaignApplication connected = app(100, 1, "https://insta/reel/aaa/");
         CampaignApplication notConnected = app(101, 2, "https://insta/reel/bbb/");
-        when(applicationRepository.findBySubmissionUrlIsNotNull())
+        when(applicationRepository.findBySubmissionUrlIsNotNull(any(Pageable.class)))
                 .thenReturn(List.of(connected, notConnected));
         when(connectionProvider.fetchReelMetrics(any(), eq("https://insta/reel/aaa/")))
                 .thenReturn(new ReelMetrics(1000, 100, 10, 5, List.of()));
@@ -91,7 +97,7 @@ class ReelMetricSyncServiceTest {
         // given
         CreatorInstagramConnection conn = connection(1);
         when(connectionRepository.findByStatus(ConnectionStatus.CONNECTED)).thenReturn(List.of(conn));
-        when(applicationRepository.findBySubmissionUrlIsNotNull())
+        when(applicationRepository.findBySubmissionUrlIsNotNull(any(Pageable.class)))
                 .thenReturn(List.of(app(100, 1, "https://insta/reel/aaa/")));
         when(connectionProvider.fetchReelMetrics(any(), any()))
                 .thenReturn(new ReelMetrics(1000, 100, 10, 5, List.of()));
@@ -111,11 +117,11 @@ class ReelMetricSyncServiceTest {
         CreatorInstagramConnection conn2 = connection(2);
         when(connectionRepository.findByStatus(ConnectionStatus.CONNECTED))
                 .thenReturn(List.of(conn1, conn2));
-        when(applicationRepository.findBySubmissionUrlIsNotNull()).thenReturn(List.of(
+        when(applicationRepository.findBySubmissionUrlIsNotNull(any(Pageable.class))).thenReturn(List.of(
                 app(100, 1, "https://insta/reel/fail/"),
                 app(200, 2, "https://insta/reel/ok/")));
         when(connectionProvider.fetchReelMetrics(any(), eq("https://insta/reel/fail/")))
-                .thenThrow(new RuntimeException("phyllo 5xx"));
+                .thenThrow(new RuntimeException("upstream 5xx with secret details"));
         when(connectionProvider.fetchReelMetrics(any(), eq("https://insta/reel/ok/")))
                 .thenReturn(new ReelMetrics(2000, 200, 20, 10, List.of()));
 
@@ -123,7 +129,8 @@ class ReelMetricSyncServiceTest {
         SyncResult result = service.syncAll();
 
         // then — 실패 1건 lastError 기록, 성공 1건 스냅샷 저장
-        assertThat(conn1.getLastError()).contains("phyllo 5xx");
+        assertThat(conn1.getLastError()).isEqualTo("Instagram 지표 동기화 중 일시적인 오류가 발생했습니다.");
+        assertThat(conn1.getLastError()).doesNotContain("secret");
         verify(snapshotRepository).save(any(ReelMetricSnapshot.class)); // 성공 건만
         assertThat(result.synced()).isEqualTo(1);
         assertThat(result.failed()).isEqualTo(1);
@@ -134,7 +141,7 @@ class ReelMetricSyncServiceTest {
         // given — 연결됐지만 submissionUrl 이 공백
         when(connectionRepository.findByStatus(ConnectionStatus.CONNECTED))
                 .thenReturn(List.of(connection(1)));
-        when(applicationRepository.findBySubmissionUrlIsNotNull())
+        when(applicationRepository.findBySubmissionUrlIsNotNull(any(Pageable.class)))
                 .thenReturn(List.of(app(100, 1, "   ")));
 
         // when
@@ -147,12 +154,29 @@ class ReelMetricSyncServiceTest {
     }
 
     @Test
+    void revokedTokenMarksConnectionErrorAndRequestsReconnect() {
+        CreatorInstagramConnection conn = connection(1);
+        when(connectionRepository.findByStatus(ConnectionStatus.CONNECTED)).thenReturn(List.of(conn));
+        when(applicationRepository.findBySubmissionUrlIsNotNull(any(Pageable.class)))
+                .thenReturn(List.of(app(100, 1, "https://insta/reel/revoked/")));
+        when(connectionProvider.fetchReelMetrics(any(), any())).thenThrow(
+                new com.viralground.backend.instagram.InstagramIntegrationException(
+                        "INSTAGRAM_RECONNECT_REQUIRED", "인스타그램을 다시 연결해 주세요",
+                        org.springframework.http.HttpStatus.CONFLICT));
+
+        SyncResult result = service.syncAll();
+
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(conn.getStatus()).isEqualTo(ConnectionStatus.ERROR);
+        assertThat(conn.getLastError()).isEqualTo("인스타그램을 다시 연결해 주세요");
+    }
+
+    @Test
     void syncCreator_는_해당_크리에이터의_릴스만_동기화한다() {
         // given — creator 1 연결됨, creator 1·2 릴스 존재
         when(connectionRepository.findByCreatorId(1)).thenReturn(Optional.of(connection(1)));
-        when(applicationRepository.findBySubmissionUrlIsNotNull()).thenReturn(List.of(
-                app(100, 1, "https://insta/reel/mine/"),
-                app(200, 2, "https://insta/reel/other/")));
+        when(applicationRepository.findByCreatorIdAndSubmissionUrlIsNotNull(eq(1), any(Pageable.class)))
+                .thenReturn(List.of(app(100, 1, "https://insta/reel/mine/")));
         when(connectionProvider.fetchReelMetrics(any(), eq("https://insta/reel/mine/")))
                 .thenReturn(new ReelMetrics(500, 50, 5, 2, List.of()));
 
@@ -160,7 +184,6 @@ class ReelMetricSyncServiceTest {
         SyncResult result = service.syncCreator(1);
 
         // then — 내 릴스만 동기화, 남의 릴스는 fetch 안 함
-        verify(connectionProvider, never()).fetchReelMetrics(any(), eq("https://insta/reel/other/"));
         verify(snapshotRepository).save(any(ReelMetricSnapshot.class));
         assertThat(result.synced()).isEqualTo(1);
         assertThat(result.failed()).isZero();

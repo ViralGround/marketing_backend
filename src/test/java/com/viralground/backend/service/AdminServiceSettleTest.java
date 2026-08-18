@@ -5,6 +5,7 @@ import com.viralground.backend.entity.*;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
+import com.viralground.backend.payment.PaymentActor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,7 +74,7 @@ class AdminServiceSettleTest {
 
         // application 이 save 되지 않아야 함 (지급 없이 SETTLED 되면 안됨)
         verify(applicationRepository, never()).save(any());
-        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt());
+        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt(), any(), anyString(), nullable(String.class));
     }
 
     @Test
@@ -88,7 +89,8 @@ class AdminServiceSettleTest {
         adminService.updateApplication(10, req);
 
         // then
-        verify(escrowService).release(1, 10, 50_000);
+        verify(escrowService).release(eq(1), eq(10), eq(50_000),
+                eq(PaymentActor.system()), eq("관리자 정산 승인"), isNull());
         verify(applicationRepository).save(app);
     }
 
@@ -106,7 +108,7 @@ class AdminServiceSettleTest {
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
 
-        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt());
+        verify(escrowService, never()).release(anyInt(), anyInt(), anyInt(), any(), anyString(), nullable(String.class));
         verify(applicationRepository, never()).save(any());
     }
 }

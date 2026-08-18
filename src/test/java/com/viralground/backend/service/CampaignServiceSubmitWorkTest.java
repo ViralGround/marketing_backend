@@ -14,6 +14,7 @@ import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.CreatorInstagramConnectionRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.storage.FileStorage;
+import com.viralground.backend.storage.UploadOwnershipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,6 +50,8 @@ class CampaignServiceSubmitWorkTest {
     ApplicationSubmissionRepository submissionRepository;
     @Mock
     FileStorage fileStorage;
+    @Mock
+    UploadOwnershipService uploadOwnershipService;
     @Mock
     CreatorInstagramConnectionRepository connectionRepository;
     @Spy

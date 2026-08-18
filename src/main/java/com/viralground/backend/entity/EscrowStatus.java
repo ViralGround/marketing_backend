@@ -6,5 +6,6 @@ public enum EscrowStatus {
     DEPOSIT_CONFIRMING,
     FUNDED,
     PARTIALLY_RELEASED,
+    RELEASED,
     REFUNDED
 }

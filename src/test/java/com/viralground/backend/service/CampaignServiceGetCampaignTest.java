@@ -3,6 +3,9 @@ package com.viralground.backend.service;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
 import com.viralground.backend.entity.EscrowStatus;
+import com.viralground.backend.entity.Member;
+import com.viralground.backend.entity.MemberStatus;
+import com.viralground.backend.entity.Role;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.ApplicationSubmissionRepository;
@@ -41,6 +44,7 @@ class CampaignServiceGetCampaignTest {
 
     Campaign hidden;
     Campaign expired;
+    Member approvedCreator;
 
     @BeforeEach
     void setUp() {
@@ -70,6 +74,13 @@ class CampaignServiceGetCampaignTest {
                 .createdById(1)
                 .deadline(LocalDateTime.now().minusDays(1))
                 .build();
+        approvedCreator = Member.builder()
+                .id(99)
+                .email("creator@example.com")
+                .name("크리에이터")
+                .role(Role.CREATOR)
+                .status(MemberStatus.APPROVED)
+                .build();
     }
 
     @Test
@@ -97,7 +108,8 @@ class CampaignServiceGetCampaignTest {
     @Test
     void should_숨김_캠페인_지원_거부() {
         // given
-        when(campaignRepository.findById(10)).thenReturn(Optional.of(hidden));
+        when(memberRepository.findById(99)).thenReturn(Optional.of(approvedCreator));
+        when(campaignRepository.findByIdForUpdate(10)).thenReturn(Optional.of(hidden));
 
         // when & then
         assertThatThrownBy(() -> campaignService.apply(10, 99, "msg"))
@@ -119,7 +131,8 @@ class CampaignServiceGetCampaignTest {
     @Test
     void should_마감_지난_캠페인_지원_거부() {
         // given — 마감 후 지원 시도는 CAMPAIGN_CLOSED 로 거부 (상세는 404 와 다른 코드로 분리)
-        when(campaignRepository.findById(20)).thenReturn(Optional.of(expired));
+        when(memberRepository.findById(99)).thenReturn(Optional.of(approvedCreator));
+        when(campaignRepository.findByIdForUpdate(20)).thenReturn(Optional.of(expired));
 
         // when & then
         assertThatThrownBy(() -> campaignService.apply(20, 99, "msg"))

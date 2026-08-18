@@ -38,7 +38,7 @@ class CreatorInstagramConnectionRepositoryTest {
         // given
         repository.save(CreatorInstagramConnection.builder()
                 .creatorId(42)
-                .provider("PHYLLO")
+                .provider("META")
                 .status(ConnectionStatus.CONNECTED)
                 .igUsername("viral.creator")
                 .connectedAt(LocalDateTime.now())
@@ -57,11 +57,11 @@ class CreatorInstagramConnectionRepositoryTest {
     void creatorId_는_유니크_제약을_가진다() {
         // given — 같은 creatorId 로 2건 저장 시도
         repository.saveAndFlush(CreatorInstagramConnection.builder()
-                .creatorId(7).provider("PHYLLO").status(ConnectionStatus.PENDING).build());
+                .creatorId(7).provider("META").status(ConnectionStatus.PENDING).build());
 
         // when / then
         assertThatThrownBy(() -> repository.saveAndFlush(CreatorInstagramConnection.builder()
-                .creatorId(7).provider("PHYLLO").status(ConnectionStatus.PENDING).build()))
+                .creatorId(7).provider("META").status(ConnectionStatus.PENDING).build()))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -69,11 +69,11 @@ class CreatorInstagramConnectionRepositoryTest {
     void status_로_연결_목록을_조회한다() {
         // given
         repository.save(CreatorInstagramConnection.builder()
-                .creatorId(1).provider("PHYLLO").status(ConnectionStatus.CONNECTED).build());
+                .creatorId(1).provider("META").status(ConnectionStatus.CONNECTED).build());
         repository.save(CreatorInstagramConnection.builder()
-                .creatorId(2).provider("PHYLLO").status(ConnectionStatus.CONNECTED).build());
+                .creatorId(2).provider("META").status(ConnectionStatus.CONNECTED).build());
         repository.save(CreatorInstagramConnection.builder()
-                .creatorId(3).provider("PHYLLO").status(ConnectionStatus.DISCONNECTED).build());
+                .creatorId(3).provider("META").status(ConnectionStatus.DISCONNECTED).build());
 
         // when
         List<CreatorInstagramConnection> connected = repository.findByStatus(ConnectionStatus.CONNECTED);

@@ -7,6 +7,8 @@ import com.viralground.backend.entity.Role;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.service.ReviewService;
+import com.viralground.backend.logging.AuditAction;
+import com.viralground.backend.logging.AuditService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,7 @@ import java.util.Map;
 public class ReviewController {
 
     private final ReviewService reviewService;
+    private final AuditService auditService;
 
     @PostMapping("/applications/{id}/reviews")
     public ResponseEntity<Map<String, Object>> write(
@@ -33,6 +36,8 @@ public class ReviewController {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
         var saved = reviewService.writeReview(id, authUser.getId(), authUser.getRole(), req);
+        auditService.record(authUser, AuditAction.REVIEW_CREATED,
+                "review", saved.getId(), "SUCCESS", null);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("id", saved.getId(), "message", "리뷰가 등록되었습니다."));
     }
@@ -41,10 +46,9 @@ public class ReviewController {
     public ResponseEntity<Map<String, Object>> listByApplication(
             @PathVariable Integer id,
             @AuthenticationPrincipal AuthUser authUser) {
-        // 당사자 여부는 서비스/상위에서 포트폴리오 공개 범위 정책에 따라 열어둠 —
-        // 로그인만 요구하는 것으로 MVP 는 단순화 (관리자/기업/크리에이터 모두 열람 가능).
         if (authUser == null) throw new AppException(ErrorCode.FORBIDDEN);
-        List<ReviewResponse> items = reviewService.getReviewsOfApplication(id);
+        List<ReviewResponse> items = reviewService.getReviewsOfApplication(
+                id, authUser.getId(), authUser.getRole());
         return ResponseEntity.ok(Map.of("reviews", items));
     }
 
@@ -52,8 +56,7 @@ public class ReviewController {
     public ResponseEntity<Map<String, Object>> listReceivedByCreator(
             @PathVariable Integer id,
             @AuthenticationPrincipal AuthUser authUser) {
-        if (authUser == null) throw new AppException(ErrorCode.FORBIDDEN);
-        List<ReviewResponse> items = reviewService.getReviewsReceivedBy(id);
+        List<ReviewResponse> items = reviewService.getPublicReviewsReceivedBy(id);
         return ResponseEntity.ok(Map.of("reviews", items));
     }
 
@@ -62,7 +65,7 @@ public class ReviewController {
             @PathVariable Integer id,
             @AuthenticationPrincipal AuthUser authUser) {
         if (authUser == null) throw new AppException(ErrorCode.FORBIDDEN);
-        List<ReviewResponse> items = reviewService.getReviewsReceivedBy(id);
+        List<ReviewResponse> items = reviewService.getPublicCompanyReviewsReceivedBy(id);
         return ResponseEntity.ok(Map.of("reviews", items));
     }
 }

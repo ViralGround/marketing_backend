@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.regex.Pattern;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +26,7 @@ public class EmailVerificationService {
     private final MemberRepository memberRepository;
     private final EmailService emailService;
     private final JwtService jwtService;
+    private final PasswordEncoder passwordEncoder;
     private final SecureRandom random = new SecureRandom();
 
     @Transactional
@@ -46,12 +48,12 @@ public class EmailVerificationService {
         EmailVerificationCode record = codeRepository.findByEmail(email).orElseGet(() ->
                 EmailVerificationCode.builder()
                         .email(email)
-                        .code(code)
+                        .code(passwordEncoder.encode(code))
                         .expiresAt(expiresAt)
                         .attempts(0)
                         .build()
         );
-        record.setCode(code);
+        record.setCode(passwordEncoder.encode(code));
         record.setExpiresAt(expiresAt);
         record.setAttempts(0);
         record.setVerifiedAt(null);
@@ -79,7 +81,7 @@ public class EmailVerificationService {
         if (record.getAttempts() >= MAX_ATTEMPTS) {
             throw new AppException(ErrorCode.VERIFICATION_ATTEMPTS_EXCEEDED);
         }
-        if (!record.getCode().equals(code)) {
+        if (!passwordEncoder.matches(code, record.getCode())) {
             record.setAttempts(record.getAttempts() + 1);
             codeRepository.save(record);
             throw new AppException(ErrorCode.VERIFICATION_CODE_MISMATCH);

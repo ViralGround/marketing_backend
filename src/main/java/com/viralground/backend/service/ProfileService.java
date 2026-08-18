@@ -22,18 +22,19 @@ public class ProfileService {
             return Map.of("hasProfile", false);
         }
         CreatorProfile p = opt.get();
+        Map<String, Object> profile = new java.util.LinkedHashMap<>();
+        profile.put("canEdit", p.getCanEdit());
+        profile.put("editingSkill", p.getEditingSkill() != null ? p.getEditingSkill().name() : null);
+        profile.put("editingTool", p.getEditingTool() != null ? p.getEditingTool().name() : null);
+        profile.put("faceExposure", p.getFaceExposure());
+        profile.put("profileImage", p.getProfileImage() != null ? p.getProfileImage() : "");
+        profile.put("instagramId", p.getInstagramId() != null ? p.getInstagramId() : "");
+        profile.put("tiktokId", p.getTiktokId() != null ? p.getTiktokId() : "");
+        profile.put("youtubeId", p.getYoutubeId() != null ? p.getYoutubeId() : "");
+        profile.put("publicProfileOptIn", Boolean.TRUE.equals(p.getPublicProfileOptIn()));
         return Map.of(
                 "hasProfile", true,
-                "profile", Map.of(
-                        "canEdit", p.getCanEdit(),
-                        "editingSkill", p.getEditingSkill() != null ? p.getEditingSkill().name() : null,
-                        "editingTool", p.getEditingTool() != null ? p.getEditingTool().name() : null,
-                        "faceExposure", p.getFaceExposure(),
-                        "profileImage", p.getProfileImage() != null ? p.getProfileImage() : "",
-                        "instagramId", p.getInstagramId() != null ? p.getInstagramId() : "",
-                        "tiktokId", p.getTiktokId() != null ? p.getTiktokId() : "",
-                        "youtubeId", p.getYoutubeId() != null ? p.getYoutubeId() : ""
-                )
+                "profile", profile
         );
     }
 
@@ -47,6 +48,14 @@ public class ProfileService {
         profile.setFaceExposure(req.getFaceExposure());
         profile.setProfileImage(req.getProfileImage());
         profile.setInstagramId(req.getInstagramId());
+        boolean wasPublic = Boolean.TRUE.equals(profile.getPublicProfileOptIn());
+        boolean makePublic = Boolean.TRUE.equals(req.getPublicProfileOptIn());
+        profile.setPublicProfileOptIn(makePublic);
+        if (makePublic && !wasPublic) {
+            profile.setPublicProfileConsentedAt(java.time.LocalDateTime.now());
+        } else if (!makePublic) {
+            profile.setPublicProfileConsentedAt(null);
+        }
 
         creatorProfileRepository.save(profile);
     }

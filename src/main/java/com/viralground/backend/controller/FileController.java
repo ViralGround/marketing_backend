@@ -1,6 +1,8 @@
 package com.viralground.backend.controller;
 
 import com.viralground.backend.config.AuthUser;
+import com.viralground.backend.dto.file.CompleteUploadRequest;
+import com.viralground.backend.dto.file.UploadCompletionResponse;
 import com.viralground.backend.entity.Role;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
@@ -8,6 +10,9 @@ import com.viralground.backend.storage.FileStorage;
 import com.viralground.backend.storage.LocalFileStorage;
 import com.viralground.backend.storage.PresignedUpload;
 import com.viralground.backend.storage.StoredFile;
+import com.viralground.backend.storage.UploadOwnershipService;
+import com.viralground.backend.logging.AuditAction;
+import com.viralground.backend.logging.AuditService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -28,6 +33,8 @@ public class FileController {
 
     private final FileStorage fileStorage;
     private final Optional<LocalFileStorage> localFileStorage;
+    private final UploadOwnershipService uploadOwnershipService;
+    private final AuditService auditService;
 
     @PostMapping("/presign-upload")
     public ResponseEntity<PresignedUpload> presignUpload(
@@ -36,7 +43,11 @@ public class FileController {
         if (authUser == null || authUser.getRole() != Role.CREATOR) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
-        return ResponseEntity.ok(fileStorage.presignUpload(request.contentType(), request.sizeBytes()));
+        PresignedUpload upload = fileStorage.presignUpload(request.contentType(), request.sizeBytes());
+        uploadOwnershipService.register(upload, authUser.getId(), request.contentType(), request.sizeBytes(), "VIDEO");
+        auditService.record(authUser, AuditAction.FILE_PRESIGNED,
+                "upload", upload.fileKey(), "SUCCESS", "VIDEO");
+        return ResponseEntity.ok(upload);
     }
 
     @PostMapping("/presign-upload/image")
@@ -47,7 +58,29 @@ public class FileController {
                 || (authUser.getRole() != Role.COMPANY && authUser.getRole() != Role.ADMIN)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
-        return ResponseEntity.ok(fileStorage.presignImageUpload(request.contentType(), request.sizeBytes()));
+        PresignedUpload upload = fileStorage.presignImageUpload(request.contentType(), request.sizeBytes());
+        uploadOwnershipService.register(upload, authUser.getId(), request.contentType(), request.sizeBytes(), "IMAGE");
+        auditService.record(authUser, AuditAction.FILE_PRESIGNED,
+                "upload", upload.fileKey(), "SUCCESS", "IMAGE");
+        return ResponseEntity.ok(upload);
+    }
+
+    /**
+     * S3/R2 직접 PUT 후 호출한다. 인증된 발급 소유자만 완료할 수 있고, 저장소 HEAD
+     * 결과가 발급 당시 key/content-type/content-length와 일치해야 UPLOADED가 된다.
+     */
+    @PostMapping("/complete-upload")
+    public ResponseEntity<UploadCompletionResponse> completeUpload(
+            @Valid @RequestBody CompleteUploadRequest request,
+            @AuthenticationPrincipal AuthUser authUser) {
+        if (authUser == null) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        UploadCompletionResponse completed = uploadOwnershipService.completeOwnedUpload(
+                request.fileKey(), authUser.getId());
+        auditService.record(authUser, AuditAction.FILE_UPLOADED,
+                "upload", completed.fileKey(), "SUCCESS", completed.status().name());
+        return ResponseEntity.ok(completed);
     }
 
     @PutMapping("/upload/{*fileKey}")
@@ -68,6 +101,7 @@ public class FileController {
             throw new AppException(isImage ? ErrorCode.IMAGE_TOO_LARGE : ErrorCode.VIDEO_TOO_LARGE);
         }
         local.acceptUpload(key, sig, exp, request.getInputStream(), contentType, declared);
+        uploadOwnershipService.completeSignedLocalUpload(key);
         return ResponseEntity.noContent().build();
     }
 

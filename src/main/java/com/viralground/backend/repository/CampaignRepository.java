@@ -108,4 +108,19 @@ public interface CampaignRepository extends JpaRepository<Campaign, Integer> {
      */
     List<Campaign> findByEscrowStatusInOrderByDepositRequestedAtAscCreatedAtAsc(
             Collection<EscrowStatus> escrowStatuses);
+
+    /**
+     * 기업 탈퇴를 막아야 하는 캠페인이 있는지 확인한다. 모집 전/중이거나 외부 자금의
+     * 입금·지급·환불이 아직 종결되지 않은 캠페인은 계정 접근을 먼저 끊을 수 없다.
+     */
+    @Query("""
+            SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
+            FROM Campaign c
+            WHERE c.createdById = :memberId
+            AND (c.status IN :activeStatuses OR c.escrowStatus IN :activeEscrowStatuses)
+            """)
+    boolean existsActiveForCompany(
+            @Param("memberId") Integer memberId,
+            @Param("activeStatuses") Collection<CampaignStatus> activeStatuses,
+            @Param("activeEscrowStatuses") Collection<EscrowStatus> activeEscrowStatuses);
 }

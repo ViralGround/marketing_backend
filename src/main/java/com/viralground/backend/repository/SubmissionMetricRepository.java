@@ -32,6 +32,19 @@ public interface SubmissionMetricRepository extends JpaRepository<SubmissionMetr
             """)
     Object[] sumByCreatorId(@Param("creatorId") Integer creatorId);
 
+    /**
+     * 여러 크리에이터의 SETTLED 성과를 한 번에 집계 — 공개 크리에이터 풀 목록용.
+     * returns rows of [creatorId, totalViews, sampleSize].
+     */
+    @Query("""
+            SELECT a.creatorId, COALESCE(SUM(m.views), 0), COUNT(m)
+            FROM SubmissionMetric m
+            JOIN CampaignApplication a ON a.id = m.applicationId
+            WHERE a.creatorId IN :creatorIds AND a.status = 'SETTLED'
+            GROUP BY a.creatorId
+            """)
+    List<Object[]> sumSettledByCreatorIds(@Param("creatorIds") List<Integer> creatorIds);
+
     /** 캠페인 하드 삭제 시 지원들에 딸린 성과 기록을 일괄 제거. */
     void deleteByApplicationIdIn(List<Integer> applicationIds);
 }

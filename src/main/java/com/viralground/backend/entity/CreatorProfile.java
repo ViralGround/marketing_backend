@@ -55,6 +55,14 @@ public class CreatorProfile {
     @Column(name = "youtube_id")
     private String youtubeId;
 
+    /** 공개 크리에이터 풀 노출은 기본 비공개이며 사용자가 명시적으로 켜고 끌 수 있다. */
+    @Column(name = "public_profile_opt_in", nullable = false)
+    @Builder.Default
+    private Boolean publicProfileOptIn = false;
+
+    @Column(name = "public_profile_consented_at")
+    private LocalDateTime publicProfileConsentedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

@@ -13,6 +13,8 @@ import com.viralground.backend.repository.*;
 import com.viralground.backend.repository.ReviewRepository;
 import com.viralground.backend.repository.SubmissionMetricRepository;
 import com.viralground.backend.storage.FileStorage;
+import com.viralground.backend.validation.CampaignBudgetPolicy;
+import com.viralground.backend.payment.PaymentActor;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -67,6 +69,7 @@ public class AdminService {
         long pending = members.stream().filter(m -> m.getStatus() == MemberStatus.PENDING).count();
         long approved = members.stream().filter(m -> m.getStatus() == MemberStatus.APPROVED).count();
         long rejected = members.stream().filter(m -> m.getStatus() == MemberStatus.REJECTED).count();
+        long withdrawn = members.stream().filter(m -> m.getStatus() == MemberStatus.WITHDRAWN).count();
 
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
@@ -105,14 +108,14 @@ public class AdminService {
                 })
                 .toList();
 
-        Map<String, Object> stats = Map.of(
-                "total", total,
-                "pendingCount", pending,
-                "approvedCount", approved,
-                "rejectedCount", rejected,
-                "todayCount", todayCount,
-                "weekCount", weekCount
-        );
+        Map<String, Object> stats = new java.util.LinkedHashMap<>();
+        stats.put("total", total);
+        stats.put("pendingCount", pending);
+        stats.put("approvedCount", approved);
+        stats.put("rejectedCount", rejected);
+        stats.put("withdrawnCount", withdrawn);
+        stats.put("todayCount", todayCount);
+        stats.put("weekCount", weekCount);
         return Map.of(
                 "stats", stats,
                 "members", list
@@ -130,14 +133,16 @@ public class AdminService {
     @Transactional
     public void deleteMember(Integer id, Integer requesterId) {
         if (id.equals(requesterId)) throw new AppException(ErrorCode.SELF_DELETE_FORBIDDEN);
-        memberRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-        memberRepository.deleteById(id);
+        throw new AppException(ErrorCode.ADMIN_MEMBER_HARD_DELETE_DISABLED);
     }
 
     @Transactional
     public void updateMemberStatus(Integer id, MemberStatus newStatus) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        if (member.getStatus() == MemberStatus.WITHDRAWN || newStatus == MemberStatus.WITHDRAWN) {
+            throw new AppException(ErrorCode.INVALID_MEMBER_STATUS_TRANSITION);
+        }
         member.setStatus(newStatus);
         memberRepository.save(member);
 
@@ -188,7 +193,12 @@ public class AdminService {
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         List<CampaignApplication> apps = applicationRepository.findByCampaignIdOrderByAppliedAtDesc(id);
         List<Integer> appIds = apps.stream().map(CampaignApplication::getId).toList();
-        java.util.Map<Integer, java.util.List<com.viralground.backend.dto.campaign.SubmissionHistoryItem>> byAppId =
+        java.util.Map<Integer, String> currentVideoUrlByAppId = apps.stream()
+                .filter(a -> a.getVideoFileKey() != null && !a.getVideoFileKey().isBlank())
+                .collect(java.util.stream.Collectors.toMap(
+                        CampaignApplication::getId,
+                        a -> fileStorage.signedDownloadUrl(a.getVideoFileKey())));
+        java.util.Map<Integer, java.util.List<CampaignDetailResponse.AdminSubmissionItem>> byAppId =
                 appIds.isEmpty()
                         ? java.util.Map.of()
                         : submissionRepository
@@ -196,19 +206,28 @@ public class AdminService {
                                 .collect(java.util.stream.Collectors.groupingBy(
                                         com.viralground.backend.entity.ApplicationSubmission::getApplicationId,
                                         java.util.stream.Collectors.mapping(
-                                                com.viralground.backend.dto.campaign.SubmissionHistoryItem::from,
+                                                s -> new CampaignDetailResponse.AdminSubmissionItem(
+                                                        s.getId(),
+                                                        s.getVideoFileKey() == null || s.getVideoFileKey().isBlank()
+                                                                ? null
+                                                                : fileStorage.signedDownloadUrl(s.getVideoFileKey()),
+                                                        s.getVideoContentType(),
+                                                        s.getVideoSizeBytes(),
+                                                        s.getSubmissionUrl(),
+                                                        s.getStatus(),
+                                                        s.getReviewComment(),
+                                                        s.getSubmittedAt(),
+                                                        s.getReviewedAt()),
                                                 java.util.stream.Collectors.toList())));
-        return new CampaignDetailResponse(campaign, apps, byAppId, resolveThumbUrl(campaign),
+        return new CampaignDetailResponse(campaign, apps, currentVideoUrlByAppId, byAppId,
+                resolveThumbUrl(campaign),
                 resolveBrandLogoUrl(campaign));
     }
 
     @Transactional
     public Campaign createCampaign(CampaignCreateRequest req, Integer adminId) {
-        if (req.getRewardAmount() == null || req.getMaxParticipants() == null
-                || req.getRewardAmount() < 0 || req.getMaxParticipants() < 1) {
-            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
-        }
-        int totalBudget = req.getRewardAmount() * req.getMaxParticipants();
+        int totalBudget = CampaignBudgetPolicy.totalBudget(
+                req.getRewardAmount(), req.getMaxParticipants());
 
         boolean immediatelyOpen = req.getImmediatelyOpen() == null || req.getImmediatelyOpen();
 
@@ -235,24 +254,18 @@ public class AdminService {
                 .deadline(req.getDeadline())
                 .createdById(adminId);
 
-        if (immediatelyOpen) {
-            builder.status(CampaignStatus.OPEN)
-                    .escrowStatus(EscrowStatus.FUNDED)
-                    .fundedAt(LocalDateTime.now());
-        } else {
-            builder.status(CampaignStatus.DRAFT)
-                    .escrowStatus(EscrowStatus.PENDING_DEPOSIT);
-        }
+        // 즉시오픈도 먼저 DRAFT/PENDING으로 만든 뒤 EscrowService의 동일한
+        // 게이트웨이 검증·원장·멱등성 경계를 통과시킨다. DB 상태만 FUNDED로
+        // 바꾸는 관리자 우회로를 허용하지 않는다.
+        builder.status(CampaignStatus.DRAFT)
+                .escrowStatus(EscrowStatus.PENDING_DEPOSIT);
 
         Campaign saved = campaignRepository.save(builder.build());
 
         if (immediatelyOpen) {
-            escrowTransactionRepository.save(EscrowTransaction.builder()
-                    .campaignId(saved.getId())
-                    .type(EscrowTxType.DEPOSIT)
-                    .amount(saved.getTotalBudget())
-                    .memo("admin immediate open")
-                    .build());
+            escrowService.forceConfirmDeposit(
+                    saved.getId(), PaymentActor.admin(adminId), "관리자 캠페인 즉시 오픈",
+                    "deposit:campaign:" + saved.getId());
         }
 
         return saved;
@@ -262,11 +275,11 @@ public class AdminService {
     public void updateCampaign(Integer id, UpdateCampaignAdminRequest req) {
         Campaign c = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-        if (req.getTitle() != null) c.setTitle(req.getTitle());
-        if (req.getDescription() != null) c.setDescription(req.getDescription());
-        if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
 
         boolean budgetAffected = req.getRewardAmount() != null || req.getMaxParticipants() != null;
+        Integer rewardAmount = c.getRewardAmount();
+        Integer maxParticipants = c.getMaxParticipants();
+        Integer totalBudget = null;
         if (budgetAffected) {
             // 예치가 이미 확정된 캠페인은 예산 변경 자체를 막는다. 이미 입금·지급된 금액과
             // 재계산된 totalBudget 이 어긋나면 정산 로직 전반이 깨지기 때문.
@@ -274,24 +287,39 @@ public class AdminService {
             if (es != EscrowStatus.NONE && es != EscrowStatus.PENDING_DEPOSIT) {
                 throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
             }
-            if (req.getRewardAmount() != null) c.setRewardAmount(req.getRewardAmount());
-            if (req.getMaxParticipants() != null) c.setMaxParticipants(req.getMaxParticipants());
-            c.setTotalBudget(c.getRewardAmount() * c.getMaxParticipants());
+            rewardAmount = req.getRewardAmount() != null
+                    ? req.getRewardAmount() : c.getRewardAmount();
+            maxParticipants = req.getMaxParticipants() != null
+                    ? req.getMaxParticipants() : c.getMaxParticipants();
+            totalBudget = CampaignBudgetPolicy.totalBudget(rewardAmount, maxParticipants);
         }
 
         if (req.getThumbnailFileKey() != null) {
             if (!req.getThumbnailFileKey().isBlank() && !fileStorage.exists(req.getThumbnailFileKey())) {
                 throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
             }
+        }
+        if (req.getBrandLogoFileKey() != null) {
+            if (!req.getBrandLogoFileKey().isBlank() && !fileStorage.exists(req.getBrandLogoFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
+        }
+
+        if (req.getTitle() != null) c.setTitle(req.getTitle());
+        if (req.getDescription() != null) c.setDescription(req.getDescription());
+        if (req.getBrandName() != null) c.setBrandName(req.getBrandName());
+        if (budgetAffected) {
+            c.setRewardAmount(rewardAmount);
+            c.setMaxParticipants(maxParticipants);
+            c.setTotalBudget(totalBudget);
+        }
+        if (req.getThumbnailFileKey() != null) {
             c.setThumbnailFileKey(req.getThumbnailFileKey().isBlank() ? null : req.getThumbnailFileKey());
         }
         if (req.getRequirements() != null) c.setRequirements(req.getRequirements());
         if (req.getStatus() != null) c.setStatus(req.getStatus());
         if (req.getBrandIntroduction() != null) c.setBrandIntroduction(req.getBrandIntroduction());
         if (req.getBrandLogoFileKey() != null) {
-            if (!req.getBrandLogoFileKey().isBlank() && !fileStorage.exists(req.getBrandLogoFileKey())) {
-                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
-            }
             c.setBrandLogoFileKey(req.getBrandLogoFileKey().isBlank() ? null : req.getBrandLogoFileKey());
         }
         campaignRepository.save(c);
@@ -301,9 +329,9 @@ public class AdminService {
     public void deleteCampaign(Integer id) {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-        // 크리에이터에게 실제 지급(RELEASE)된 이력이 있으면 회계·감사 보존을 위해 삭제를 막고
-        // '숨김' 처리를 유도한다. 입금/환불만 있는 (테스트성) 캠페인은 안전하게 제거한다.
-        if (escrowTransactionRepository.existsByCampaignIdAndType(id, EscrowTxType.RELEASE)) {
+        // 결제 기록은 종류와 무관하게 append-only 감사 자료다. 하나라도 있으면 캠페인과
+        // 원장을 삭제하지 않고 숨김 처리를 사용한다.
+        if (escrowTransactionRepository.existsByCampaignId(id)) {
             throw new AppException(ErrorCode.CAMPAIGN_HAS_SETTLEMENT);
         }
         // 단방향 연관이라 cascade 가 없어 자식 데이터를 직접 제거한다.
@@ -315,7 +343,6 @@ public class AdminService {
             reviewRepository.deleteByApplicationIdIn(appIds);
         }
         applicationRepository.deleteByCampaignId(id);
-        escrowTransactionRepository.deleteByCampaignId(id);
         // 업로드 파일은 트랜잭션 밖 자원이라 best-effort 로 정리한다(실패해도 삭제는 진행).
         deleteCampaignFilesQuietly(campaign, apps);
         campaignRepository.delete(campaign);
@@ -470,6 +497,11 @@ public class AdminService {
 
     @Transactional
     public void updateApplication(Integer id, UpdateApplicationStatusRequest req) {
+        updateApplication(id, req, null);
+    }
+
+    @Transactional
+    public void updateApplication(Integer id, UpdateApplicationStatusRequest req, Integer adminActorId) {
         CampaignApplication app = applicationRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
 
@@ -495,7 +527,12 @@ public class AdminService {
             Integer payout = app.getRewardPaidAmount() != null
                     ? app.getRewardPaidAmount()
                     : campaign.getRewardAmount();
-            escrowService.release(campaign.getId(), app.getId(), payout);
+            String operationReason = req.getOperationReason() == null || req.getOperationReason().isBlank()
+                    ? "관리자 정산 승인" : req.getOperationReason();
+            escrowService.release(
+                    campaign.getId(), app.getId(), payout,
+                    adminActorId == null ? PaymentActor.system() : PaymentActor.admin(adminActorId),
+                    operationReason, req.getIdempotencyKey());
             if (app.getRewardPaidAmount() == null) {
                 app.setRewardPaidAmount(payout);
             }

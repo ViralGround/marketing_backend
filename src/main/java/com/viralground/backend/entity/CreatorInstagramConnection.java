@@ -6,8 +6,8 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * 크리에이터의 인스타그램 연동 참조. 애그리게이터(Phyllo)가 동의·토큰을 보관하고,
- * 우리는 연결 참조 id 만 저장(민감 토큰 미보관). creatorId 당 1건(upsert).
+ * 크리에이터의 Meta Instagram Graph API 연결. access token은 평문으로 저장하지 않고
+ * {@code InstagramTokenCipher}로 암호화한 값만 저장한다. creatorId 당 1건(upsert).
  *
  * <p>{@link com.viralground.backend.service.ReelMetricSyncService} 가 CONNECTED 연결을 순회해
  * 릴스 지표를 동기화한다.
@@ -29,21 +29,31 @@ public class CreatorInstagramConnection {
     @Column(name = "creator_id", nullable = false, unique = true)
     private Integer creatorId;
 
-    /** 애그리게이터 식별자. 현재 단일 provider("PHYLLO"). */
+    /** 공급자 식별자. 운영은 META, 명시적인 로컬 개발에서만 MOCK. */
     @Column(nullable = false)
     @Builder.Default
-    private String provider = "PHYLLO";
+    private String provider = "META";
 
-    /** 애그리게이터가 부여한 user id (Phyllo user, 크리에이터당 1개 재사용). access token 아님. */
+    /** Meta Instagram professional account id. */
     @Column(name = "provider_user_id")
     private String providerUserId;
 
-    /** 애그리게이터가 부여한 연결 계정 id (account, 동의 완료 시 부여). access token 아님. */
-    @Column(name = "provider_account_id")
+    /** Meta Instagram professional account id. 이전 컬럼 호환을 위해 함께 유지한다. */
+    @Column(name = "provider_account_id", unique = true)
     private String providerAccountId;
 
     @Column(name = "ig_username")
     private String igUsername;
+
+    /** AES-GCM으로 암호화한 장기 access token. 절대 로그/응답에 포함하지 않는다. */
+    @Column(name = "encrypted_access_token", columnDefinition = "TEXT")
+    private String encryptedAccessToken;
+
+    @Column(name = "access_token_expires_at")
+    private LocalDateTime accessTokenExpiresAt;
+
+    @Column(name = "token_refreshed_at")
+    private LocalDateTime tokenRefreshedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

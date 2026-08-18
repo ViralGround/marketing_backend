@@ -5,11 +5,13 @@ import com.viralground.backend.dto.auth.SignupRequest;
 import com.viralground.backend.entity.EditingTool;
 import com.viralground.backend.entity.Gender;
 import com.viralground.backend.entity.Member;
+import com.viralground.backend.entity.CompanyProfile;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.CompanyProfileRepository;
 import com.viralground.backend.repository.CreatorProfileRepository;
 import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.repository.RefreshTokenRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -19,10 +21,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,6 +42,8 @@ class AuthServiceAgreementTest {
     @Mock JwtService jwtService;
     @Mock EmailVerificationService emailVerificationService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock RefreshTokenRepository refreshTokenRepository;
+    @Mock LegalConsentService legalConsentService;
 
     @InjectMocks
     AuthService authService;
@@ -51,7 +58,7 @@ class AuthServiceAgreementTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.AGREEMENT_REQUIRED);
 
         verifyNoInteractions(emailVerificationService, memberRepository,
-                creatorProfileRepository, passwordEncoder);
+                creatorProfileRepository, passwordEncoder, legalConsentService);
     }
 
     @Test
@@ -85,6 +92,21 @@ class AuthServiceAgreementTest {
     }
 
     @Test
+    void should_reject_stale_document_before_email_or_member_mutation() {
+        SignupRequest req = creatorRequest();
+        doThrow(new AppException(ErrorCode.LEGAL_DOCUMENT_VERSION_MISMATCH))
+                .when(legalConsentService).validateCreatorSignup(req);
+
+        assertThatThrownBy(() -> authService.signup(req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.LEGAL_DOCUMENT_VERSION_MISMATCH);
+
+        verifyNoInteractions(emailVerificationService, memberRepository,
+                creatorProfileRepository, passwordEncoder);
+    }
+
+    @Test
     void should_marketingOptInAt_저장_when_체크함() {
         SignupRequest req = creatorRequest();
         req.setMarketingOptIn(true);
@@ -100,6 +122,10 @@ class AuthServiceAgreementTest {
         assertThat(saved.getAgreedAge14At()).isNotNull();
         assertThat(saved.getAgreedThirdPartyAt()).isNotNull();
         assertThat(saved.getMarketingOptInAt()).isNotNull();
+        verify(legalConsentService).recordCreatorSignup(
+                org.mockito.ArgumentMatchers.eq(1),
+                org.mockito.ArgumentMatchers.same(req),
+                any(Instant.class));
     }
 
     @Test
@@ -123,6 +149,39 @@ class AuthServiceAgreementTest {
         assertThatThrownBy(() -> authService.signupCompany(req))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.AGREEMENT_REQUIRED);
+    }
+
+    @Test
+    void companySignup_rejectsInvalidPublicHomepageBeforeMemberMutation() {
+        CompanySignupRequest req = companyRequest();
+        req.setHomepage("https://127.0.0.1/internal");
+
+        assertThatThrownBy(() -> authService.signupCompany(req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_PUBLIC_URL);
+
+        verifyNoInteractions(emailVerificationService, memberRepository,
+                companyProfileRepository, passwordEncoder);
+    }
+
+    @Test
+    void companySignup_normalizesHomepageBeforeSavingProfile() {
+        CompanySignupRequest req = companyRequest();
+        req.setHomepage("  https://viralground.kr/brands  ");
+        lenient().when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(memberRepository.saveAndFlush(any(Member.class))).thenAnswer(invocation -> {
+            Member member = invocation.getArgument(0);
+            member.setId(31);
+            return member;
+        });
+
+        authService.signupCompany(req);
+
+        ArgumentCaptor<CompanyProfile> profileCaptor =
+                ArgumentCaptor.forClass(CompanyProfile.class);
+        verify(companyProfileRepository).save(profileCaptor.capture());
+        assertThat(profileCaptor.getValue().getHomepage())
+                .isEqualTo("https://viralground.kr/brands");
     }
 
     private void stubCreatorSignupHappyPath() {
@@ -150,6 +209,10 @@ class AuthServiceAgreementTest {
         req.setAgreedPrivacy(true);
         req.setAgreedAge14(true);
         req.setAgreedThirdParty(true);
+        req.setTermsVersion("terms-v1");
+        req.setPrivacyVersion("privacy-v1");
+        req.setAge14Version("age14-v1");
+        req.setCreatorThirdPartyVersion("third-party-v1");
         return req;
     }
 
@@ -160,13 +223,16 @@ class AuthServiceAgreementTest {
         req.setName("담당자");
         req.setVerifiedToken("token");
         req.setCompanyName("주식회사 예시");
-        req.setBusinessNumber("123-45-67890");
+        req.setBusinessNumber("1234567890");
         req.setRepresentativeName("대표자");
         req.setContactName("담당자");
         req.setContactPhone("010-0000-0000");
         req.setAgreedTerms(true);
         req.setAgreedPrivacy(true);
         req.setAgreedAge14(true);
+        req.setTermsVersion("terms-v1");
+        req.setPrivacyVersion("privacy-v1");
+        req.setAge14Version("age14-v1");
         return req;
     }
 }

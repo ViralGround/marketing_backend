@@ -12,6 +12,10 @@ public interface CreatorInstagramConnectionRepository
 
     Optional<CreatorInstagramConnection> findByCreatorId(Integer creatorId);
 
+    Optional<CreatorInstagramConnection> findByProviderAccountId(String providerAccountId);
+
+    boolean existsByProviderAccountIdAndCreatorIdNot(String providerAccountId, Integer creatorId);
+
     List<CreatorInstagramConnection> findByStatus(ConnectionStatus status);
 
     long countByStatus(ConnectionStatus status);

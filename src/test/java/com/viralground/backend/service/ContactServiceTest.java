@@ -10,6 +10,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +24,8 @@ class ContactServiceTest {
 
     @Mock ContactRequestRepository repository;
     @Mock EmailService emailService;
+    @Mock LegalConsentService legalConsentService;
+    @Mock Clock clock;
 
     @InjectMocks
     ContactService contactService;
@@ -37,7 +41,10 @@ class ContactServiceTest {
                 });
 
         // when
-        ContactRequest saved = contactService.submit("brand@example.com", "Acme", "홍길동");
+        Instant consentedAt = Instant.parse("2026-08-13T05:00:00Z");
+        when(clock.instant()).thenReturn(consentedAt);
+        ContactRequest saved = contactService.submit(
+                "brand@example.com", "Acme", "홍길동", "privacy-v1");
 
         // then — 저장된 값 검증
         ArgumentCaptor<ContactRequest> captor = ArgumentCaptor.forClass(ContactRequest.class);
@@ -46,7 +53,10 @@ class ContactServiceTest {
         assertThat(stored.getEmail()).isEqualTo("brand@example.com");
         assertThat(stored.getBrandName()).isEqualTo("Acme");
         assertThat(stored.getContactName()).isEqualTo("홍길동");
+        assertThat(stored.getPrivacyConsentVersion()).isEqualTo("privacy-v1");
+        assertThat(stored.getPrivacyConsentedAt()).isEqualTo(consentedAt);
         assertThat(saved.getId()).isEqualTo(1);
+        verify(legalConsentService).validatePrivacyDocumentVersion("privacy-v1");
 
         // and — 관리자 알림 발송 (입력값 그대로 전달)
         verify(emailService).notifyAdminsOfNewContact("brand@example.com", "Acme", "홍길동");
@@ -59,7 +69,8 @@ class ContactServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        contactService.submit("a@b.com", "Acme", "  ");
+        when(clock.instant()).thenReturn(Instant.parse("2026-08-13T05:00:00Z"));
+        contactService.submit("a@b.com", "Acme", "  ", "privacy-v1");
 
         // then
         ArgumentCaptor<ContactRequest> captor = ArgumentCaptor.forClass(ContactRequest.class);
@@ -92,7 +103,9 @@ class ContactServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        contactService.submit("  brand@example.com  ", "  Acme  ", "  홍길동  ");
+        when(clock.instant()).thenReturn(Instant.parse("2026-08-13T05:00:00Z"));
+        contactService.submit(
+                "  brand@example.com  ", "  Acme  ", "  홍길동  ", "privacy-v1");
 
         // then
         ArgumentCaptor<ContactRequest> captor = ArgumentCaptor.forClass(ContactRequest.class);

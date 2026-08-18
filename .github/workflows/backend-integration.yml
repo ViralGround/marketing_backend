@@ -1,0 +1,99 @@
+name: Backend PostgreSQL migration integration
+
+on:
+  pull_request:
+    paths:
+      - "src/main/java/**"
+      - "src/main/resources/**"
+      - "src/test/java/com/viralground/backend/migration/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/backend-integration.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/main/java/**"
+      - "src/main/resources/**"
+      - "src/test/java/com/viralground/backend/migration/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "gradlew"
+      - ".github/workflows/backend-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-postgres-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Verify Docker is available
+        run: |
+          docker version
+          docker info
+
+      - name: Run fresh PostgreSQL migration and Hibernate validation
+        env:
+          TESTCONTAINERS_CHECKS_DISABLE: "false"
+        run: ./gradlew integrationTest --no-daemon --stacktrace
+
+      - name: Fail if integration tests were skipped or not executed
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=(build/test-results/integrationTest/TEST-*.xml)
+          if (( ${#reports[@]} == 0 )); then
+            echo "No integration test result was produced."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import glob
+          import sys
+          import xml.etree.ElementTree as ET
+
+          tests = skipped = failures = errors = 0
+          for path in glob.glob("build/test-results/integrationTest/TEST-*.xml"):
+              suite = ET.parse(path).getroot()
+              tests += int(suite.attrib.get("tests", 0))
+              skipped += int(suite.attrib.get("skipped", 0))
+              failures += int(suite.attrib.get("failures", 0))
+              errors += int(suite.attrib.get("errors", 0))
+
+          if tests < 1 or skipped != 0 or failures != 0 or errors != 0:
+              print(
+                  f"Integration suite invalid: tests={tests}, skipped={skipped}, "
+                  f"failures={failures}, errors={errors}"
+              )
+              sys.exit(1)
+          print(f"Integration suite executed: tests={tests}, skipped={skipped}")
+          PY
+
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgresql-integration-reports
+          path: |
+            build/reports/tests/integrationTest/**
+            build/test-results/integrationTest/**
+          if-no-files-found: error
+          retention-days: 14

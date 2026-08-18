@@ -1,6 +1,7 @@
 package com.viralground.backend.controller;
 
 import com.viralground.backend.dto.landing.CompanyPublicResponse;
+import com.viralground.backend.dto.landing.CreatorPublicResponse;
 import com.viralground.backend.dto.landing.FeaturedCampaignResponse;
 import com.viralground.backend.service.LandingService;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,11 @@ public class LandingController {
     @GetMapping("/featured-campaigns")
     ResponseEntity<Map<String, List<FeaturedCampaignResponse>>> getFeaturedCampaigns() {
         return ResponseEntity.ok(Map.of("campaigns", landingService.getFeaturedCampaigns()));
+    }
+
+    @GetMapping("/creators")
+    ResponseEntity<Map<String, List<CreatorPublicResponse>>> getCreators() {
+        return ResponseEntity.ok(Map.of("creators", landingService.getPublicCreators()));
     }
 
     @GetMapping("/companies/{memberId}")

@@ -2,6 +2,7 @@ package com.viralground.backend.dto.admin;
 
 import com.viralground.backend.entity.CampaignStatus;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -13,10 +14,12 @@ public class UpdateCampaignAdminRequest {
     private String description;
     private String brandName;
 
-    @Min(0)
+    @Min(1)
+    @Max(100000000)
     private Integer rewardAmount;
 
     @Min(1)
+    @Max(10000)
     private Integer maxParticipants;
 
     private String thumbnailFileKey;

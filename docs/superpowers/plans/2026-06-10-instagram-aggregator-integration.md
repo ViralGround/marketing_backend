@@ -162,3 +162,6 @@
 - shares: Task 1,10 ✓ / 연결 모델: Task 2,7,9 ✓ / 스냅샷·추이: Task 4,6 ✓ / 동기화+스케줄+수동: Task 5,10 ✓ / provider 교체+Phyllo 스켈레톤+env: Task 3 ✓ / 제출 시점 마킹: Task 8 ✓ / 상태 가시성: Task 9,10,11 ✓ / 폴백: Task 6 ✓.
 - env 의존 실호출 제외: Task 3 에서 Phyllo 메서드 스켈레톤(UnsupportedOperationException) — 충족.
 - 미해결: Phyllo 실제 엔드포인트/웹훅(키 단계), Task 11 admin 연동조회 경로는 구현 시 member detail 확장으로 확정.
+# 보관됨 — 구현에 사용하지 말 것
+
+이 문서는 과거 Phyllo 실행 계획이다. ViralGround는 2026-08-13부터 애그리게이터를 사용하지 않고 Meta Instagram Graph API를 직접 연결한다. 현재 운영 계약과 설정은 [`../../instagram-meta-setup.md`](../../instagram-meta-setup.md)를 따른다.

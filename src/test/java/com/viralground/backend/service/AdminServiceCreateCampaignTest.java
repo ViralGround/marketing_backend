@@ -6,6 +6,7 @@ import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
 import com.viralground.backend.storage.FileStorage;
+import com.viralground.backend.payment.PaymentActor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -17,6 +18,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -81,5 +83,35 @@ class AdminServiceCreateCampaignTest {
         assertThatThrownBy(() -> adminService.createCampaign(req, 1))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.SUBMISSION_NOT_FOUND);
+    }
+
+    @Test
+    void should_결제검증_경로를_통해서만_즉시오픈_when_immediatelyOpen_true() {
+        CampaignCreateRequest req = baseReq();
+        req.setImmediatelyOpen(true);
+        when(campaignRepository.save(any())).thenAnswer(inv -> {
+            Campaign campaign = inv.getArgument(0);
+            campaign.setId(77);
+            return campaign;
+        });
+
+        Campaign saved = adminService.createCampaign(req, 1);
+
+        assertThat(saved.getStatus()).isEqualTo(com.viralground.backend.entity.CampaignStatus.DRAFT);
+        assertThat(saved.getEscrowStatus()).isEqualTo(com.viralground.backend.entity.EscrowStatus.PENDING_DEPOSIT);
+        verify(escrowService).forceConfirmDeposit(
+                77, PaymentActor.admin(1), "관리자 캠페인 즉시 오픈", "deposit:campaign:77");
+        verify(escrowTransactionRepository, never()).save(any());
+    }
+
+    @Test
+    void should_INVALID_CAMPAIGN_INPUT_when_보상금이_0() {
+        CampaignCreateRequest req = baseReq();
+        req.setRewardAmount(0);
+
+        assertThatThrownBy(() -> adminService.createCampaign(req, 1))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        verify(campaignRepository, never()).save(any());
     }
 }

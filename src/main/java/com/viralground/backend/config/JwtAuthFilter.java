@@ -1,7 +1,8 @@
 package com.viralground.backend.config;
 
-import com.viralground.backend.entity.Role;
 import com.viralground.backend.service.JwtService;
+import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.entity.MemberStatus;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -24,23 +25,32 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final MemberRepository memberRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        String header = request.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
+        String token = resolveAccessToken(request);
+        if (token != null) {
             Claims claims = jwtService.parseToken(token);
-            if (claims != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (claims != null && jwtService.isTokenType(claims, "access")
+                    && SecurityContextHolder.getContext().getAuthentication() == null) {
                 try {
+                    int memberId = Integer.parseInt(claims.getSubject());
+                    var member = memberRepository.findById(memberId).orElse(null);
+                    if (member == null || member.getStatus() != MemberStatus.APPROVED
+                            || !Boolean.TRUE.equals(member.getEmailVerified())) {
+                        SecurityContextHolder.clearContext();
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
                     AuthUser authUser = new AuthUser(
-                            Integer.parseInt(claims.getSubject()),
-                            claims.get("email", String.class),
-                            Role.valueOf(claims.get("role", String.class)),
-                            claims.get("name", String.class)
+                            memberId,
+                            member.getEmail(),
+                            member.getRole(),
+                            member.getName()
                     );
                     var auth = new UsernamePasswordAuthenticationToken(
                             authUser, null,
@@ -48,14 +58,28 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     );
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 } catch (NumberFormatException e) {
-                    log.warn("JWT subject가 숫자가 아닙니다: sub={}", claims.getSubject());
+                    log.warn("event=authentication_rejected reason=invalid_subject");
                     SecurityContextHolder.clearContext();
                 } catch (IllegalArgumentException | NullPointerException e) {
-                    log.warn("JWT 클레임 파싱 실패: {}", e.getMessage());
+                    log.warn("event=authentication_rejected reason=invalid_claims errorType={}",
+                            e.getClass().getSimpleName());
                     SecurityContextHolder.clearContext();
                 }
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private String resolveAccessToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+        if (request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if ("access_token".equals(cookie.getName())) return cookie.getValue();
+            }
+        }
+        return null;
     }
 }

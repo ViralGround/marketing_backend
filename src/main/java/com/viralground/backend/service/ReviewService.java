@@ -14,6 +14,7 @@ import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.repository.ReviewRepository;
+import com.viralground.backend.repository.CreatorProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ public class ReviewService {
     private final CampaignApplicationRepository applicationRepository;
     private final CampaignRepository campaignRepository;
     private final MemberRepository memberRepository;
+    private final CreatorProfileRepository creatorProfileRepository;
 
     @Transactional
     public Review writeReview(Integer applicationId, Integer authorId, Role authorRole,
@@ -85,7 +87,16 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
-    public List<ReviewResponse> getReviewsOfApplication(Integer applicationId) {
+    public List<ReviewResponse> getReviewsOfApplication(
+            Integer applicationId, Integer viewerId, Role viewerRole) {
+        CampaignApplication application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
+        Campaign campaign = campaignRepository.findById(application.getCampaignId())
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        boolean participant = viewerRole == Role.ADMIN
+                || (viewerRole == Role.CREATOR && application.getCreatorId().equals(viewerId))
+                || (viewerRole == Role.COMPANY && campaign.getCreatedById().equals(viewerId));
+        if (!participant) throw new AppException(ErrorCode.FORBIDDEN);
         List<Review> reviews = reviewRepository.findByApplicationIdOrderByCreatedAtAsc(applicationId);
         return toResponses(reviews);
     }
@@ -94,6 +105,37 @@ public class ReviewService {
     public List<ReviewResponse> getReviewsReceivedBy(Integer targetId) {
         List<Review> reviews = reviewRepository.findByTargetIdOrderByCreatedAtDesc(targetId);
         return toResponses(reviews);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReviewResponse> getPublicReviewsReceivedBy(Integer targetId) {
+        memberRepository.findById(targetId)
+                .filter(member -> member.getRole() == Role.CREATOR
+                        && member.getStatus() == com.viralground.backend.entity.MemberStatus.APPROVED)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        creatorProfileRepository.findByMemberId(targetId)
+                .filter(profile -> Boolean.TRUE.equals(profile.getPublicProfileOptIn()))
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        return reviewRepository.findByTargetIdOrderByCreatedAtDesc(targetId).stream()
+                .map(r -> new ReviewResponse(
+                        r.getId(), null, null, r.getAuthorRole(),
+                        r.getAuthorRole() == Role.COMPANY ? "브랜드 담당자" : "크리에이터",
+                        null, r.getRating(), r.getComment(), r.getCreatedAt()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReviewResponse> getPublicCompanyReviewsReceivedBy(Integer targetId) {
+        memberRepository.findById(targetId)
+                .filter(member -> member.getRole() == Role.COMPANY
+                        && member.getStatus() == com.viralground.backend.entity.MemberStatus.APPROVED)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        return reviewRepository.findByTargetIdOrderByCreatedAtDesc(targetId).stream()
+                .map(r -> new ReviewResponse(
+                        r.getId(), null, null, r.getAuthorRole(),
+                        r.getAuthorRole() == Role.COMPANY ? "브랜드 담당자" : "크리에이터",
+                        null, r.getRating(), r.getComment(), r.getCreatedAt()))
+                .toList();
     }
 
     private List<ReviewResponse> toResponses(List<Review> reviews) {

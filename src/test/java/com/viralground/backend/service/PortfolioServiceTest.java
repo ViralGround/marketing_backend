@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -24,6 +25,7 @@ class PortfolioServiceTest {
     @Mock CampaignRepository campaignRepository;
     @Mock ReviewRepository reviewRepository;
     @Mock SubmissionMetricRepository metricRepository;
+    @Mock CreatorProfileRepository creatorProfileRepository;
 
     @InjectMocks
     PortfolioService portfolioService;
@@ -116,5 +118,15 @@ class PortfolioServiceTest {
         assertThat(summary).containsEntry("reviewCount", 0);
         assertThat(summary).containsEntry("averageRating", 0.0);
         assertThat((List<?>) portfolio.get("items")).isEmpty();
+    }
+
+    @Test
+    void publicPortfolioIsNotAvailableWithoutExplicitDirectoryOptIn() {
+        when(creatorProfileRepository.findByMemberId(7)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> portfolioService.getPublicPortfolio(7))
+                .isInstanceOf(com.viralground.backend.exception.AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.viralground.backend.exception.ErrorCode.USER_NOT_FOUND);
     }
 }

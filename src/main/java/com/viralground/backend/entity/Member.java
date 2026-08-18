@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "members")
@@ -54,6 +55,14 @@ public class Member {
 
     @Column(name = "marketing_opt_in_at")
     private LocalDateTime marketingOptInAt;
+
+    @Column(name = "withdrawn_at")
+    private Instant withdrawnAt;
+
+    public void withdraw(Instant at) {
+        this.status = MemberStatus.WITHDRAWN;
+        this.withdrawnAt = java.util.Objects.requireNonNull(at, "at");
+    }
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

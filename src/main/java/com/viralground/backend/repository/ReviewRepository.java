@@ -22,6 +22,18 @@ public interface ReviewRepository extends JpaRepository<Review, Integer> {
     @Query("SELECT COALESCE(AVG(r.rating), 0) FROM Review r")
     Double averageRating();
 
+    /**
+     * 여러 크리에이터가 받은 리뷰 평점을 한 번에 집계 — 공개 크리에이터 풀 목록용.
+     * returns rows of [targetId, avgRating, count].
+     */
+    @Query("""
+            SELECT r.targetId, AVG(r.rating), COUNT(r)
+            FROM Review r
+            WHERE r.targetId IN :targetIds
+            GROUP BY r.targetId
+            """)
+    List<Object[]> ratingByTargetIds(List<Integer> targetIds);
+
     /** 캠페인 하드 삭제 시 지원들에 딸린 리뷰를 일괄 제거. */
     void deleteByApplicationIdIn(List<Integer> applicationIds);
 }

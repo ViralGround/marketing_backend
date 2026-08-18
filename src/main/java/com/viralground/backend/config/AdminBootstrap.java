@@ -40,7 +40,7 @@ public class AdminBootstrap implements CommandLineRunner {
         }
         String normalized = email.trim().toLowerCase();
         if (memberRepository.existsByEmail(normalized)) {
-            log.info("Admin bootstrap: '{}' 이미 존재하여 건너뜀", normalized);
+            log.info("event=admin_bootstrap_skipped reason=already_exists");
             return;
         }
         Member admin = memberRepository.save(Member.builder()
@@ -51,6 +51,6 @@ public class AdminBootstrap implements CommandLineRunner {
                 .status(MemberStatus.APPROVED)
                 .emailVerified(true)
                 .build());
-        log.info("Admin bootstrap: ADMIN 계정 생성 id={} email={}", admin.getId(), normalized);
+        log.info("event=admin_bootstrap_created memberId={}", admin.getId());
     }
 }

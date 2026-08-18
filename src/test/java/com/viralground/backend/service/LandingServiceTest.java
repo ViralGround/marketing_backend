@@ -5,10 +5,17 @@ import com.viralground.backend.dto.landing.FeaturedCampaignResponse;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
 import com.viralground.backend.entity.CompanyProfile;
+import com.viralground.backend.entity.Member;
+import com.viralground.backend.entity.MemberStatus;
+import com.viralground.backend.entity.Role;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.CampaignRepository;
 import com.viralground.backend.repository.CompanyProfileRepository;
+import com.viralground.backend.repository.CreatorProfileRepository;
+import com.viralground.backend.repository.MemberRepository;
+import com.viralground.backend.repository.ReviewRepository;
+import com.viralground.backend.repository.SubmissionMetricRepository;
 import com.viralground.backend.storage.FileStorage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +40,10 @@ class LandingServiceTest {
     @Mock CampaignRepository campaignRepository;
     @Mock CampaignApplicationRepository applicationRepository;
     @Mock CompanyProfileRepository companyProfileRepository;
+    @Mock CreatorProfileRepository creatorProfileRepository;
+    @Mock MemberRepository memberRepository;
+    @Mock ReviewRepository reviewRepository;
+    @Mock SubmissionMetricRepository metricRepository;
     @Mock FileStorage fileStorage;
 
     private final Clock clock = Clock.fixed(
@@ -40,7 +51,8 @@ class LandingServiceTest {
 
     private LandingService service() {
         return new LandingService(campaignRepository, applicationRepository,
-                companyProfileRepository, fileStorage, clock);
+                companyProfileRepository, creatorProfileRepository, memberRepository, reviewRepository,
+                metricRepository, fileStorage, clock);
     }
 
     private Campaign campaign(Integer id, Integer createdById, Integer featuredOrder) {
@@ -62,6 +74,23 @@ class LandingServiceTest {
             public Integer getCampaignId() { return campaignId; }
             public Long getCount() { return count; }
         };
+    }
+
+    private CampaignApplicationRepository.CreatorCompletedRow completedRow(Integer creatorId, long completed) {
+        return new CampaignApplicationRepository.CreatorCompletedRow() {
+            public Integer getCreatorId() { return creatorId; }
+            public Long getCompleted() { return completed; }
+        };
+    }
+
+    @Test
+    void getPublicCreators_requiresExplicitPublicProfileOptIn() {
+        when(applicationRepository.countSettledGroupedByCreator())
+                .thenReturn(List.of(completedRow(7, 3)));
+        when(creatorProfileRepository.findByMemberIdInAndPublicProfileOptInTrue(List.of(7)))
+                .thenReturn(List.of());
+
+        assertThat(service().getPublicCreators()).isEmpty();
     }
 
     @Test
@@ -150,6 +179,9 @@ class LandingServiceTest {
     @Test
     void getCompanyPublic_공개필드와_OPEN_캠페인_목록을_반환() {
         // given
+        when(memberRepository.findById(10)).thenReturn(java.util.Optional.of(Member.builder()
+                .id(10).email("company@example.test").password("hash").name("회사")
+                .role(Role.COMPANY).status(MemberStatus.APPROVED).emailVerified(true).build()));
         CompanyProfile profile = CompanyProfile.builder()
                 .memberId(10)
                 .companyName("주식회사 텐")
@@ -182,6 +214,9 @@ class LandingServiceTest {
     @Test
     void getCompanyPublic_프로필_없으면_예외() {
         // given
+        when(memberRepository.findById(99)).thenReturn(java.util.Optional.of(Member.builder()
+                .id(99).email("company99@example.test").password("hash").name("회사")
+                .role(Role.COMPANY).status(MemberStatus.APPROVED).emailVerified(true).build()));
         when(companyProfileRepository.findByMemberId(99)).thenReturn(java.util.Optional.empty());
 
         // when & then

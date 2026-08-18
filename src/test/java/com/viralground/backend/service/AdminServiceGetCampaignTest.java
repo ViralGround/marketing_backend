@@ -141,6 +141,44 @@ class AdminServiceGetCampaignTest {
     }
 
     @Test
+    void getCampaign_영상은_rawKey_대신_서명URL로_응답한다() {
+        Campaign campaign = Campaign.builder()
+                .id(5).title("검수").description("설명").brandName("브랜드")
+                .rewardAmount(10_000).maxParticipants(1).totalBudget(10_000)
+                .status(CampaignStatus.DRAFT).escrowStatus(EscrowStatus.PENDING_DEPOSIT)
+                .build();
+        CampaignApplication app = CampaignApplication.builder()
+                .id(100).campaignId(5).creatorId(20).status(ApplicationStatus.SUBMITTED)
+                .videoFileKey("submissions/current.mp4").build();
+        ApplicationSubmission history = ApplicationSubmission.builder()
+                .id(200).applicationId(100).videoFileKey("submissions/history.mp4")
+                .status(SubmissionReviewStatus.SUBMITTED).build();
+        when(campaignRepository.findById(5)).thenReturn(Optional.of(campaign));
+        when(applicationRepository.findByCampaignIdOrderByAppliedAtDesc(5))
+                .thenReturn(List.of(app));
+        when(submissionRepository.findByApplicationIdInOrderByApplicationIdAscSubmittedAtAsc(
+                List.of(100))).thenReturn(List.of(history));
+        when(fileStorage.signedDownloadUrl("submissions/current.mp4"))
+                .thenReturn("https://storage.example/current?signed=1");
+        when(fileStorage.signedDownloadUrl("submissions/history.mp4"))
+                .thenReturn("https://storage.example/history?signed=1");
+
+        CampaignDetailResponse response = adminService.getCampaign(5);
+
+        CampaignDetailResponse.ApplicationInfo info = response.getApplications().getFirst();
+        assertThat(info.videoUrl()).isEqualTo("https://storage.example/current?signed=1");
+        assertThat(info.submissions()).singleElement().satisfies(submission ->
+                assertThat(submission.videoUrl())
+                        .isEqualTo("https://storage.example/history?signed=1"));
+        assertThat(CampaignDetailResponse.ApplicationInfo.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .doesNotContain("videoFileKey");
+        assertThat(CampaignDetailResponse.AdminSubmissionItem.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .doesNotContain("videoFileKey");
+    }
+
+    @Test
     void getCampaign_은_브랜드_소개와_로고URL을_담는다() {
         // given — 관리자 직접 생성 캠페인의 브랜드 소개·로고
         Campaign campaign = Campaign.builder()

@@ -7,6 +7,8 @@ import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.service.MetricsService;
 import com.viralground.backend.service.PerformanceService;
+import com.viralground.backend.logging.AuditAction;
+import com.viralground.backend.logging.AuditService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,7 @@ public class MetricsController {
 
     private final MetricsService metricsService;
     private final PerformanceService performanceService;
+    private final AuditService auditService;
 
     @PutMapping("/me/applications/{id}/metrics")
     public ResponseEntity<Map<String, Object>> upsert(
@@ -31,12 +34,16 @@ public class MetricsController {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
         var saved = metricsService.upsert(id, authUser.getId(), req);
+        auditService.record(authUser, AuditAction.METRICS_UPDATED,
+                "campaignApplication", id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("id", saved.getId(), "message", "성과가 저장되었습니다."));
     }
 
     @GetMapping("/me/performance")
     public ResponseEntity<Map<String, Object>> myPerformance(@AuthenticationPrincipal AuthUser authUser) {
-        if (authUser == null) throw new AppException(ErrorCode.FORBIDDEN);
+        if (authUser == null || authUser.getRole() != Role.CREATOR) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
         return ResponseEntity.ok(performanceService.getCreatorPerformance(authUser.getId()));
     }
 
@@ -44,7 +51,10 @@ public class MetricsController {
     public ResponseEntity<Map<String, Object>> campaignPerformance(
             @PathVariable Integer id,
             @AuthenticationPrincipal AuthUser authUser) {
-        if (authUser == null) throw new AppException(ErrorCode.FORBIDDEN);
+        if (authUser == null
+                || (authUser.getRole() != Role.COMPANY && authUser.getRole() != Role.ADMIN)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
         return ResponseEntity.ok(
                 performanceService.getCampaignPerformance(id, authUser.getId(), authUser.getRole()));
     }

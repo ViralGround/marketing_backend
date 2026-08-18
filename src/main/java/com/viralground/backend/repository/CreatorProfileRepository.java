@@ -12,4 +12,6 @@ public interface CreatorProfileRepository extends JpaRepository<CreatorProfile, 
     Optional<CreatorProfile> findByMemberId(Integer memberId);
 
     List<CreatorProfile> findByMemberIdIn(Collection<Integer> memberIds);
+
+    List<CreatorProfile> findByMemberIdInAndPublicProfileOptInTrue(Collection<Integer> memberIds);
 }

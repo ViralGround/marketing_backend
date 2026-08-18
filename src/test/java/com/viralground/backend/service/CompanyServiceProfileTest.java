@@ -7,6 +7,7 @@ import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
 import com.viralground.backend.storage.FileStorage;
+import com.viralground.backend.storage.UploadOwnershipService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -19,6 +20,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class CompanyServiceProfileTest {
@@ -31,6 +35,7 @@ class CompanyServiceProfileTest {
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock ApplicationSubmissionRepository submissionRepository;
     @Mock FileStorage fileStorage;
+    @Mock UploadOwnershipService uploadOwnershipService;
     @Mock CompanyProfileRepository companyProfileRepository;
 
     @InjectMocks
@@ -150,5 +155,53 @@ class CompanyServiceProfileTest {
         // when & then
         assertThatThrownBy(() -> companyService.updateMyProfile(99, req))
                 .isInstanceOf(AppException.class);
+    }
+
+    @Test
+    void updateMyProfile_다른_회사의_로고키면_저장하지_않음() {
+        CompanyProfile p = profile();
+        when(companyProfileRepository.findByMemberId(10)).thenReturn(Optional.of(p));
+        doThrow(new AppException(ErrorCode.SUBMISSION_NOT_FOUND))
+                .when(uploadOwnershipService).requireOwnedUpload("thumbnails/other-logo", 10);
+        UpdateCompanyProfileRequest req = new UpdateCompanyProfileRequest();
+        req.setLogoFileKey("thumbnails/other-logo");
+
+        assertThatThrownBy(() -> companyService.updateMyProfile(10, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.SUBMISSION_NOT_FOUND);
+
+        verify(fileStorage, never()).exists("thumbnails/other-logo");
+        verify(companyProfileRepository, never()).save(p);
+        assertThat(p.getLogoFileKey()).isNull();
+    }
+
+    @Test
+    void updateMyProfile_홈페이지를_trim하고_공백은_삭제로_정규화() {
+        CompanyProfile p = profile();
+        when(companyProfileRepository.findByMemberId(10)).thenReturn(Optional.of(p));
+        UpdateCompanyProfileRequest req = new UpdateCompanyProfileRequest();
+        req.setHomepage("  https://viralground.kr/company  ");
+
+        companyService.updateMyProfile(10, req);
+        assertThat(p.getHomepage()).isEqualTo("https://viralground.kr/company");
+
+        req.setHomepage("   ");
+        companyService.updateMyProfile(10, req);
+        assertThat(p.getHomepage()).isNull();
+    }
+
+    @Test
+    void updateMyProfile_유효하지_않은_공개URL은_다른_필드도_변경하지_않음() {
+        CompanyProfile p = profile();
+        when(companyProfileRepository.findByMemberId(10)).thenReturn(Optional.of(p));
+        UpdateCompanyProfileRequest req = new UpdateCompanyProfileRequest();
+        req.setHomepage("http://127.0.0.1/admin");
+        req.setIntroduction("변경되면 안 됨");
+
+        assertThatThrownBy(() -> companyService.updateMyProfile(10, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_PUBLIC_URL);
+        assertThat(p.getIntroduction()).isEqualTo("우리는 텐입니다.");
+        verify(companyProfileRepository, never()).save(p);
     }
 }

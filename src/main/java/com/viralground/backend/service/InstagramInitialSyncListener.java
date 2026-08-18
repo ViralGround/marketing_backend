@@ -26,10 +26,11 @@ public class InstagramInitialSyncListener {
     public void onConnected(InstagramConnectedEvent event) {
         try {
             ReelMetricSyncService.SyncResult result = syncService.syncCreator(event.creatorId());
-            log.info("연결 직후 초기 동기화 — creatorId={}, synced={}, failed={}",
+            log.info("event=instagram_initial_sync_completed creatorId={} synced={} failed={}",
                     event.creatorId(), result.synced(), result.failed());
         } catch (Exception e) {
-            log.warn("연결 직후 초기 동기화 실패 — creatorId={}: {}", event.creatorId(), e.getMessage());
+            log.warn("event=instagram_initial_sync_failed creatorId={} errorType={}",
+                    event.creatorId(), e.getClass().getSimpleName());
         }
     }
 }

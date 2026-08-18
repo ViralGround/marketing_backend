@@ -1,6 +1,7 @@
 package com.viralground.backend.instagram;
 
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.Random;
  * 실제 연동 시 이 빈을 실제 API 구현으로 교체. (Math.random 대신 시드 고정 Random 사용.)
  */
 @Component
+@ConditionalOnProperty(name = "instagram.provider", havingValue = "mock")
 public class MockInstagramMetricsProvider implements InstagramMetricsProvider {
 
     private static final int TREND_DAYS = 14;

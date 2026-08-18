@@ -51,10 +51,10 @@ class AdminServiceDeleteCampaignTest {
     }
 
     @Test
-    void should_CAMPAIGN_HAS_SETTLEMENT_예외_when_실지급_이력이_있는_캠페인_삭제() {
-        // given — RELEASE(실지급) 트랜잭션이 존재하면 회계 보존을 위해 삭제 거부
+    void should_CAMPAIGN_HAS_SETTLEMENT_예외_when_결제_원장이_있는_캠페인_삭제() {
+        // given — 결제 종류와 무관하게 append-only 원장이 존재하면 삭제 거부
         when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
-        when(escrowTransactionRepository.existsByCampaignIdAndType(1, EscrowTxType.RELEASE)).thenReturn(true);
+        when(escrowTransactionRepository.existsByCampaignId(1)).thenReturn(true);
 
         // when & then
         assertThatThrownBy(() -> adminService.deleteCampaign(1))
@@ -64,14 +64,14 @@ class AdminServiceDeleteCampaignTest {
     }
 
     @Test
-    void should_연쇄_삭제_when_실지급_없이_지원과_예치금만_있는_캠페인() {
-        // given — DEPOSIT 만 있고 RELEASE 는 없음. 지원 1건(영상 파일)과 썸네일이 있음
+    void should_연쇄_삭제_when_결제_원장_없이_지원만_있는_캠페인() {
+        // given — 결제 원장은 없음. 지원 1건(영상 파일)과 썸네일이 있음
         CampaignApplication app = CampaignApplication.builder()
                 .id(10).campaignId(1).creatorId(7)
                 .videoFileKey("submissions/v.mp4").build();
         campaign.setThumbnailFileKey("thumbnails/t.webp");
         when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
-        when(escrowTransactionRepository.existsByCampaignIdAndType(1, EscrowTxType.RELEASE)).thenReturn(false);
+        when(escrowTransactionRepository.existsByCampaignId(1)).thenReturn(false);
         when(applicationRepository.findByCampaignIdOrderByAppliedAtDesc(1)).thenReturn(List.of(app));
 
         // when
@@ -82,7 +82,7 @@ class AdminServiceDeleteCampaignTest {
         verify(metricRepository).deleteByApplicationIdIn(List.of(10));
         verify(reviewRepository).deleteByApplicationIdIn(List.of(10));
         verify(applicationRepository).deleteByCampaignId(1);
-        verify(escrowTransactionRepository).deleteByCampaignId(1);
+        verify(escrowTransactionRepository, never()).delete(any());
         verify(fileStorage).delete("submissions/v.mp4");
         verify(fileStorage).delete("thumbnails/t.webp");
         verify(campaignRepository).delete(campaign);
@@ -92,7 +92,7 @@ class AdminServiceDeleteCampaignTest {
     void should_단순_삭제_when_자식_데이터_없음() {
         // given — 지원/트랜잭션 없음
         when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
-        when(escrowTransactionRepository.existsByCampaignIdAndType(1, EscrowTxType.RELEASE)).thenReturn(false);
+        when(escrowTransactionRepository.existsByCampaignId(1)).thenReturn(false);
         when(applicationRepository.findByCampaignIdOrderByAppliedAtDesc(1)).thenReturn(List.of());
 
         // when
@@ -103,7 +103,7 @@ class AdminServiceDeleteCampaignTest {
         verify(metricRepository, never()).deleteByApplicationIdIn(any());
         verify(reviewRepository, never()).deleteByApplicationIdIn(any());
         verify(applicationRepository).deleteByCampaignId(1);
-        verify(escrowTransactionRepository).deleteByCampaignId(1);
+        verify(escrowTransactionRepository, never()).delete(any());
         verify(campaignRepository).delete(campaign);
     }
 

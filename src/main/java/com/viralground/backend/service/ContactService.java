@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.time.Clock;
 
 @Service
 @RequiredArgsConstructor
@@ -14,6 +15,8 @@ public class ContactService {
 
     private final ContactRequestRepository repository;
     private final EmailService emailService;
+    private final LegalConsentService legalConsentService;
+    private final Clock clock;
 
     /** 어드민 페이지용 — 접수일 내림차순 전체 조회. */
     @Transactional(readOnly = true)
@@ -26,7 +29,8 @@ public class ContactService {
      * controller 단에서 @Valid 로 형식 검증이 이미 끝났다고 가정하고, 여기서는 정규화만 한다.
      */
     @Transactional
-    public ContactRequest submit(String email, String brandName, String contactName) {
+    public ContactRequest submit(String email, String brandName, String contactName, String privacyVersion) {
+        legalConsentService.validatePrivacyDocumentVersion(privacyVersion);
         String normalizedEmail = email == null ? "" : email.trim();
         String normalizedBrand = brandName == null ? "" : brandName.trim();
         String normalizedContact = (contactName == null || contactName.isBlank())
@@ -36,6 +40,8 @@ public class ContactService {
                 .email(normalizedEmail)
                 .brandName(normalizedBrand)
                 .contactName(normalizedContact)
+                .privacyConsentVersion(privacyVersion)
+                .privacyConsentedAt(clock.instant())
                 .build());
 
         emailService.notifyAdminsOfNewContact(normalizedEmail, normalizedBrand, normalizedContact);

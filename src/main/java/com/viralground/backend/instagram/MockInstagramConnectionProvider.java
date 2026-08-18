@@ -3,29 +3,49 @@ package com.viralground.backend.instagram;
 import com.viralground.backend.entity.CreatorInstagramConnection;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
-import java.util.Optional;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 
 /**
- * 인스타그램 연동 포트의 목 구현(기본). 키 발급 전·테스트·데모에서 사용한다.
- * 연결 토큰은 {@code "mock-"+creatorId}, 지표는 {@link MockInstagramMetricsProvider}(결정적 시드)에 위임.
- *
- * <p>{@code instagram.provider=phyllo} 로 두면 {@link com.viralground.backend.instagram.phyllo.PhylloInstagramConnectionProvider}
- * 로 교체된다. 설정이 없으면 이 빈이 기본(matchIfMissing).
+ * 명시적인 로컬 개발용 목 구현. 운영 환경에서는
+ * {@link InstagramProviderSafetyValidator}가 mock 기동을 차단한다.
  */
 @Component
-@ConditionalOnProperty(name = "instagram.provider", havingValue = "mock", matchIfMissing = true)
+@ConditionalOnProperty(name = "instagram.provider", havingValue = "mock")
 public class MockInstagramConnectionProvider implements InstagramConnectionProvider {
 
     private final InstagramMetricsProvider metricsProvider;
+    private final String redirectUri;
+    private final Clock clock;
 
-    public MockInstagramConnectionProvider(InstagramMetricsProvider metricsProvider) {
+    public MockInstagramConnectionProvider(
+            InstagramMetricsProvider metricsProvider,
+            @Value("${meta.instagram.redirect-uri:http://localhost:8080/instagram/meta/oauth/callback}")
+            String redirectUri,
+            Clock clock) {
         this.metricsProvider = metricsProvider;
+        this.redirectUri = redirectUri;
+        this.clock = clock;
     }
 
     @Override
-    public ConnectToken createConnectToken(int creatorId, String creatorName, String existingProviderUserId) {
-        return new ConnectToken("mock-token-" + creatorId, "mock-user-" + creatorId, "mock");
+    public String buildAuthorizationUrl(String state, String profileHandle) {
+        return redirectUri + "?state="
+                + URLEncoder.encode(state, StandardCharsets.UTF_8)
+                + "&code=" + URLEncoder.encode("mock:" + profileHandle, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public AuthorizationResult exchangeAuthorizationCode(String code) {
+        if (code == null || !code.startsWith("mock:")) {
+            throw new IllegalArgumentException("유효하지 않은 mock authorization code입니다");
+        }
+        String username = code.substring("mock:".length());
+        return new AuthorizationResult("mock-account-" + username, username,
+                "mock-access-token", clock.instant().plusSeconds(3600));
     }
 
     @Override
@@ -34,12 +54,12 @@ public class MockInstagramConnectionProvider implements InstagramConnectionProvi
     }
 
     @Override
-    public String fetchAccountUsername(String providerAccountId) {
-        return null; // mock 은 실제 계정이 없어 일치 검증/표시를 생략한다
+    public void revoke(AuthorizationResult authorization) {
+        // 로컬 개발용 mock에는 외부 권한이 없다.
     }
 
     @Override
-    public Optional<String> findConnectedAccountId(String providerUserId) {
-        return Optional.empty(); // mock 은 자동 복구 불필요
+    public void revoke(CreatorInstagramConnection connection) {
+        // 로컬 개발용 mock에는 외부 권한이 없다.
     }
 }

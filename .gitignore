@@ -2,6 +2,7 @@
 .gradle/
 build/
 bin/
+/.codex-tmp/
 !gradle/wrapper/gradle-wrapper.jar  # ← 이 줄 필수 (wrapper jar는 커밋되어야 함)
 
 # === 환경변수 ===

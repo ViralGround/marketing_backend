@@ -8,6 +8,7 @@ import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
 import com.viralground.backend.storage.FileStorage;
+import com.viralground.backend.storage.UploadOwnershipService;
 
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class CampaignService {
     private final CreatorInstagramConnectionRepository connectionRepository;
     private final FileStorage fileStorage;
     private final Clock clock;
+    private final UploadOwnershipService uploadOwnershipService;
 
     /** 캠페인 마감 여부. deadline 이 null 이면 "마감 미정" 으로 보고 항상 활성으로 간주. */
     private boolean isPastDeadline(Campaign c) {
@@ -106,10 +108,22 @@ public class CampaignService {
 
     @Transactional
     public CampaignApplication apply(Integer campaignId, Integer creatorId, String message) {
-        Campaign target = campaignRepository.findById(campaignId)
+        Member creator = memberRepository.findById(creatorId)
+                .orElseThrow(() -> new AppException(ErrorCode.FORBIDDEN));
+        if (creator.getRole() != Role.CREATOR || creator.getStatus() != MemberStatus.APPROVED) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Campaign target = campaignRepository.findByIdForUpdate(campaignId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
         if (target.isHidden()) {
             throw new AppException(ErrorCode.CAMPAIGN_NOT_FOUND);
+        }
+        if (target.getStatus() != CampaignStatus.OPEN) {
+            throw new AppException(ErrorCode.CAMPAIGN_CLOSED);
+        }
+        if (target.getEscrowStatus() != EscrowStatus.FUNDED) {
+            throw new AppException(ErrorCode.CAMPAIGN_NOT_FUNDED);
         }
         if (isPastDeadline(target)) {
             throw new AppException(ErrorCode.CAMPAIGN_CLOSED);
@@ -119,15 +133,18 @@ public class CampaignService {
             throw new AppException(ErrorCode.ALREADY_APPLIED);
         }
 
+        long currentApplications = applicationRepository.countByCampaignId(campaignId);
+        if (currentApplications >= target.getMaxParticipants()) {
+            throw new AppException(ErrorCode.CAMPAIGN_FULL);
+        }
+
         CampaignApplication app = applicationRepository.save(CampaignApplication.builder()
                 .campaignId(campaignId)
                 .creatorId(creatorId)
                 .message(message)
                 .build());
 
-        Campaign campaign = campaignRepository.findById(campaignId).orElseThrow();
-        Member creator = memberRepository.findById(creatorId).orElseThrow();
-        emailService.notifyAdminsOfNewApplication(campaign.getTitle(), creator.getName());
+        emailService.notifyAdminsOfNewApplication(target.getTitle(), creator.getName());
 
         return app;
     }
@@ -179,6 +196,7 @@ public class CampaignService {
             if (!fileStorage.exists(request.videoFileKey())) {
                 throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
             }
+            uploadOwnershipService.requireOwnedUpload(request.videoFileKey(), creatorId);
             app.setVideoFileKey(request.videoFileKey());
             app.setVideoContentType(request.videoContentType());
             app.setVideoSizeBytes(request.videoSizeBytes());
@@ -220,11 +238,6 @@ public class CampaignService {
                 .map(c -> c.getStatus() == ConnectionStatus.CONNECTED)
                 .orElse(false);
         return connected ? "AUTO" : "MANUAL";
-    }
-
-    @Transactional
-    public void deleteAccount(Integer memberId) {
-        memberRepository.deleteById(memberId);
     }
 
     public Map<String, Object> getStats(Integer creatorId) {

@@ -108,3 +108,6 @@
 - 인스타 외 플랫폼(틱톡·유튜브) 연동 — 추후.
 - 크리에이터向 개인 분석 화면 — 추후(현재 관리자 대시보드 중심).
 - 복수 provider 동시 운영.
+# 보관됨 — 구현에 사용하지 말 것
+
+이 문서는 과거 Phyllo 검토 기록이다. ViralGround는 2026-08-13부터 애그리게이터를 사용하지 않고 Meta Instagram Graph API를 직접 연결한다. 현재 운영 계약과 설정은 [`../../instagram-meta-setup.md`](../../instagram-meta-setup.md)를 따른다.

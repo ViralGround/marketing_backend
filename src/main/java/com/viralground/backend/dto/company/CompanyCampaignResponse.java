@@ -1,11 +1,11 @@
 package com.viralground.backend.dto.company;
 
-import com.viralground.backend.dto.campaign.SubmissionHistoryItem;
 import com.viralground.backend.entity.ApplicationStatus;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
 import com.viralground.backend.entity.EscrowStatus;
 import com.viralground.backend.entity.EscrowTxType;
+import com.viralground.backend.entity.SubmissionReviewStatus;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
@@ -66,7 +66,7 @@ public class CompanyCampaignResponse {
             ApplicationStatus status,
             String message,
             String submissionUrl,
-            String videoFileKey,
+            String videoUrl,
             Integer resubmissionCount,
             String reviewComment,
             Integer rewardPaidAmount,
@@ -74,10 +74,24 @@ public class CompanyCampaignResponse {
             LocalDateTime submittedAt,
             LocalDateTime settledAt,
             CreatorInfo creator,
-            List<SubmissionHistoryItem> submissions
+            List<CompanySubmissionItem> submissions
     ) {}
 
-    public record CreatorInfo(Integer id, String name, String email) {}
+    /** 제3자 제공 동의 범위 밖의 이메일은 기업 응답에 포함하지 않는다. */
+    public record CreatorInfo(Integer id, String name) {}
+
+    /** 내부 object key 대신 기업이 짧게 사용할 수 있는 서명 URL만 제공한다. */
+    public record CompanySubmissionItem(
+            Integer id,
+            String videoUrl,
+            String videoContentType,
+            Long videoSizeBytes,
+            String submissionUrl,
+            SubmissionReviewStatus status,
+            String reviewComment,
+            LocalDateTime submittedAt,
+            LocalDateTime reviewedAt
+    ) {}
 
     public record EscrowTransactionItem(
             Integer id,
