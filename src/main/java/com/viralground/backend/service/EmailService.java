@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.util.HtmlUtils;
 
 import java.util.Arrays;
@@ -38,7 +39,7 @@ public class EmailService {
         this.mockMode = mockMode;
         if (mockMode) {
             log.warn("═══════════════════════════════════════════════════════════════");
-            log.warn("⚠️  EMAIL MOCK MODE ACTIVE — Resend 호출 스킵, 로그에 코드 출력");
+            log.warn("⚠️  EMAIL MOCK MODE ACTIVE — Resend 호출을 생략합니다");
             log.warn("   프로덕션에서는 절대 활성화하지 마세요 (EMAIL_MOCK=false).");
             log.warn("═══════════════════════════════════════════════════════════════");
         } else {
@@ -57,7 +58,11 @@ public class EmailService {
                 .filter(s -> !s.isEmpty())
                 .toList();
 
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(3_000);
+        requestFactory.setReadTimeout(8_000);
         this.restClient = RestClient.builder()
+                .requestFactory(requestFactory)
                 .baseUrl("https://api.resend.com")
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -70,11 +75,7 @@ public class EmailService {
 
     public void sendVerificationCode(String to, String code) {
         if (mockMode) {
-            log.warn("═══════════════════════════════════════════");
-            log.warn("[MOCK] 이메일 인증 코드 (Resend 스킵)");
-            log.warn("  수신자: {}", to);
-            log.warn("  코드  : {}", code);
-            log.warn("═══════════════════════════════════════════");
+            log.warn("[MOCK] 이메일 인증 코드 발송을 생략했습니다. 수신자와 코드는 로그에 남기지 않습니다.");
             return;
         }
         String html = """
@@ -88,7 +89,28 @@ public class EmailService {
                   <p style="color:#888;font-size:13px;margin:8px 0 0;">본인이 요청하지 않았다면 이 이메일을 무시하세요.</p>
                 </div>
                 """.formatted(code);
-        sendEmailOrThrow(to, "[Viral Ground] 이메일 인증 코드: " + code, html);
+        // 제목은 실패 로그나 공급자 메타데이터에 더 넓게 노출될 수 있으므로 인증 코드를 넣지 않는다.
+        sendEmailOrThrow(to, "[Viral Ground] 이메일 인증 코드", html);
+    }
+
+    public void sendPasswordResetCode(String to, String code) {
+        if (mockMode) {
+            log.warn("[MOCK] 비밀번호 재설정 코드 발송을 생략했습니다. 수신자와 코드는 로그에 남기지 않습니다.");
+            return;
+        }
+        String html = """
+                <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111;">
+                  <h2 style="margin:0 0 16px;">비밀번호 재설정 코드</h2>
+                  <p style="color:#444;margin:0 0 16px;">아래 6자리 코드를 비밀번호 재설정 화면에 입력해주세요.</p>
+                  <div style="background:#f5f5f5;border-radius:8px;padding:20px;text-align:center;margin:20px 0;">
+                    <span style="font-size:32px;font-weight:700;letter-spacing:8px;color:#111;font-family:monospace;">%s</span>
+                  </div>
+                  <p style="color:#888;font-size:13px;margin:16px 0 0;">이 코드는 <strong>5분</strong> 동안 유효합니다.</p>
+                  <p style="color:#888;font-size:13px;margin:8px 0 0;">본인이 요청하지 않았다면 이 이메일을 무시하세요. 비밀번호는 변경되지 않습니다.</p>
+                </div>
+                """.formatted(code);
+        // 제목은 실패 로그나 공급자 메타데이터에 더 넓게 노출될 수 있으므로 코드를 넣지 않는다.
+        sendEmailOrThrow(to, "[Viral Ground] 비밀번호 재설정 코드", html);
     }
 
     @Async
@@ -210,7 +232,7 @@ public class EmailService {
 
     private void sendEmailInternal(String to, String subject, String html, boolean throwOnFailure) {
         if (mockMode) {
-            log.info("[MOCK] 이메일 스킵: to={}, subject={}", to, subject);
+            log.info("event=email_skipped reason=mock_mode");
             return;
         }
         try {
@@ -223,15 +245,13 @@ public class EmailService {
                     })
                     .toEntity(String.class);
             if (response.getStatusCode().isError()) {
-                log.warn("Resend API 오류: status={}, to={}, body={}",
-                        response.getStatusCode(), to, response.getBody());
+                log.warn("Resend API 오류: status={}", response.getStatusCode());
                 if (throwOnFailure) throw new AppException(ErrorCode.EMAIL_SEND_FAILED);
             }
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("이메일 발송 실패(네트워크/기타): to={}, subject={}, error={}",
-                    to, subject, e.getMessage());
+            log.warn("event=email_delivery_failed errorType={}", e.getClass().getSimpleName());
             if (throwOnFailure) throw new AppException(ErrorCode.EMAIL_SEND_FAILED);
         }
     }

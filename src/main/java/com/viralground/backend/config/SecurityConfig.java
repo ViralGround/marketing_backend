@@ -7,12 +7,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -30,22 +31,55 @@ public class SecurityConfig {
     @Value("${cors.allowed-origins}")
     private String allowedOrigins;
 
+    @Value("${auth.cookie.secure:false}")
+    private boolean cookieSecure;
+
+    @Value("${auth.cookie.domain:}")
+    private String cookieDomain;
+
+    @Value("${auth.cookie.same-site:Lax}")
+    private String cookieSameSite;
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> {
+                    CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+                    repository.setCookieCustomizer(cookie -> {
+                        cookie.sameSite(cookieSameSite)
+                                .secure(cookieSecure)
+                                .path("/");
+                        if (!cookieDomain.isBlank()) cookie.domain(cookieDomain);
+                    });
+                    CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
+                    handler.setCsrfRequestAttributeName(null);
+                    csrf.csrfTokenRepository(repository)
+                            .csrfTokenRequestHandler(handler)
+                            .ignoringRequestMatchers(
+                                    "/auth/signup", "/auth/signup/company",
+                                    "/auth/email/**", "/auth/password/**",
+                                    "/instagram/meta/webhook",
+                                    "/files/upload/**", "/contact");
+                })
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/auth/**").permitAll()
-                        // 랜딩 페이지 상담신청 — 비인증 공개. 봇 방어는 추후 레이트리밋으로.
+                        .requestMatchers(HttpMethod.GET, "/instagram/meta/oauth/callback").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/instagram/meta/webhook").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/instagram/meta/webhook").permitAll()
+                        // 랜딩 페이지 상담신청 — 비인증 공개. 컨트롤러에서 동의·honeypot·rate-limit 적용.
                         .requestMatchers(HttpMethod.POST, "/contact").permitAll()
                         // 서명 URL 기반 접근 — JWT 불필요. 서명 검증은 FileStorage 구현체가 담당.
                         .requestMatchers(HttpMethod.PUT, "/files/upload/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/files/**").permitAll()
-                        // 랜딩 페이지 공개 조회(대표 캠페인·회사 소개) — 비로그인 노출.
+                        // 랜딩 페이지 공개 조회(대표 캠페인·회사 소개·크리에이터 풀) — 비로그인 노출.
                         .requestMatchers(HttpMethod.GET, "/landing/**").permitAll()
+                        // 크리에이터 공개 포트폴리오·리뷰 — /creators 풀 목록에서 진입하는 공개 상세.
+                        .requestMatchers(HttpMethod.GET, "/creators/*/portfolio").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/creators/*/reviews").permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
