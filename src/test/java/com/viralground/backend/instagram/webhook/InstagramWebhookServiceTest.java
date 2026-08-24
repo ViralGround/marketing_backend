@@ -1,9 +1,12 @@
 package com.viralground.backend.instagram.webhook;
 
+import com.viralground.backend.config.PreproductionScheduledMutationGuard;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.viralground.backend.instagram.InstagramIntegrationException;
 import com.viralground.backend.instagram.meta.MetaInstagramProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -18,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class InstagramWebhookServiceTest {
@@ -30,7 +34,13 @@ class InstagramWebhookServiceTest {
             Duration.ofSeconds(3), Duration.ofSeconds(8), Duration.ZERO, Duration.ofDays(7), 3, 50, 3, 14);
     private final InstagramWebhookService service = new InstagramWebhookService(
             verifier, repository, properties, new ObjectMapper(),
-            Clock.fixed(Instant.parse("2026-08-13T02:00:00Z"), ZoneOffset.UTC));
+            Clock.fixed(Instant.parse("2026-08-13T02:00:00Z"), ZoneOffset.UTC),
+            mock(PreproductionScheduledMutationGuard.class));
+
+    @BeforeEach
+    void enableInstagram() {
+        ReflectionTestUtils.setField(service, "instagramFeatureEnabled", true);
+    }
 
     @Test
     void storesOnlyDedupeHashForSignedPayload() {
@@ -67,5 +77,16 @@ class InstagramWebhookServiceTest {
                 .isInstanceOf(InstagramIntegrationException.class)
                 .extracting("code").isEqualTo("INSTAGRAM_WEBHOOK_SIGNATURE_INVALID");
         verify(repository, never()).existsByEventHash(any());
+    }
+
+    @Test
+    void disabledFeatureRejectsWebhookWith503BeforeSignatureOrPersistence() {
+        ReflectionTestUtils.setField(service, "instagramFeatureEnabled", false);
+
+        assertThatThrownBy(() -> service.accept("{}".getBytes(StandardCharsets.UTF_8), "sha256=value"))
+                .isInstanceOf(InstagramIntegrationException.class)
+                .satisfies(error -> assertThat(((InstagramIntegrationException) error).getStatus())
+                        .isEqualTo(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE));
+        verifyNoInteractions(verifier, repository);
     }
 }

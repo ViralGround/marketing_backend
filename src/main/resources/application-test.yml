@@ -15,6 +15,8 @@ app:
   environment: test
   url: http://localhost:3000
   admin-emails: ""
+  scheduling:
+    enabled: false
 
 jwt:
   secret: test-secret-key-at-least-32-characters-long
@@ -27,6 +29,8 @@ resend:
 
 email:
   mock: true
+  delivery-mode: disabled
+  allowed-recipients: ""
 
 cors:
   allowed-origins: http://localhost:3000
@@ -40,6 +44,23 @@ files:
 
 payments:
   gateway: mock
+
+features:
+  payments:
+    enabled: true
+  instagram:
+    enabled: true
+  uploads:
+    enabled: true
+
+rate-limit:
+  backend: local
+  auth-fail-closed: true
+
+notification:
+  outbox:
+    enabled: true
+    dispatch-enabled: false
 
 instagram:
   provider: mock

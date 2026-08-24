@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -41,9 +42,13 @@ public class EscrowService {
     private final PaymentGateway paymentGateway;
     private final EmailService emailService;
 
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
+
     /** 기업이 예치금 입금을 신청한다. PENDING_DEPOSIT → DEPOSIT_CONFIRMING. */
     @Transactional
     public void requestDeposit(Integer campaignId, Integer companyMemberId) {
+        requirePaymentsEnabled();
         Campaign campaign = lockedCampaign(campaignId);
         requireOwner(campaign, companyMemberId);
         if ("disabled".equals(normalizedProvider())) {
@@ -72,6 +77,7 @@ public class EscrowService {
     @Transactional
     public EscrowTransaction confirmDeposit(Integer campaignId, PaymentActor actor,
                                              String reason, String idempotencyKey) {
+        requirePaymentsEnabled();
         Campaign campaign = lockedCampaign(campaignId);
         if (campaign.getEscrowStatus() != EscrowStatus.DEPOSIT_CONFIRMING
                 && campaign.getEscrowStatus() != EscrowStatus.FUNDED) {
@@ -90,6 +96,7 @@ public class EscrowService {
     @Transactional
     public EscrowTransaction forceConfirmDeposit(Integer campaignId, PaymentActor actor,
                                                   String reason, String idempotencyKey) {
+        requirePaymentsEnabled();
         Campaign campaign = lockedCampaign(campaignId);
         EscrowStatus current = campaign.getEscrowStatus();
         if (current != EscrowStatus.NONE
@@ -155,6 +162,7 @@ public class EscrowService {
 
     @Transactional
     public void rejectDeposit(Integer campaignId, PaymentActor actor, String reasonValue) {
+        requirePaymentsEnabled();
         Campaign campaign = lockedCampaign(campaignId);
         if (campaign.getEscrowStatus() != EscrowStatus.DEPOSIT_CONFIRMING) {
             throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
@@ -179,6 +187,7 @@ public class EscrowService {
     @Transactional
     public EscrowTransaction release(Integer campaignId, Integer applicationId, Integer amountValue,
                                      PaymentActor actor, String reasonValue, String keyValue) {
+        requirePaymentsEnabled();
         int amount = requirePositive(amountValue);
         Campaign campaign = lockedCampaign(campaignId);
         if (applicationId == null) throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
@@ -232,6 +241,7 @@ public class EscrowService {
     @Transactional
     public EscrowTransaction refund(Integer campaignId, PaymentActor actor,
                                     String reasonValue, String keyValue) {
+        requirePaymentsEnabled();
         Campaign campaign = lockedCampaign(campaignId);
         PaymentActor safeActor = actor == null ? PaymentActor.system() : actor;
         String reason = normalizeReason(reasonValue);
@@ -363,6 +373,13 @@ public class EscrowService {
     private String normalizedProvider() {
         String provider = paymentGateway.providerName();
         return provider == null || provider.isBlank() ? "unknown" : provider.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void requirePaymentsEnabled() {
+        if (!paymentsFeatureEnabled) {
+            log.warn("event=payment_blocked reason=feature_disabled");
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
     }
 
     private static int requirePositive(Integer amount) {

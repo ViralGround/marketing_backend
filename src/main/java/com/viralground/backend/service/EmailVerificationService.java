@@ -1,13 +1,17 @@
 package com.viralground.backend.service;
 
 import com.viralground.backend.entity.EmailVerificationCode;
+import com.viralground.backend.config.PostgresTransactionAdvisoryLock;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
+import com.viralground.backend.exception.VerificationCodeMismatchException;
+import com.viralground.backend.notification.NotificationOutboxService;
 import com.viralground.backend.repository.EmailVerificationCodeRepository;
 import com.viralground.backend.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -27,9 +31,10 @@ public class EmailVerificationService {
     private final EmailService emailService;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final PostgresTransactionAdvisoryLock transactionLock;
     private final SecureRandom random = new SecureRandom();
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public LocalDateTime requestCode(String rawEmail) {
         if (rawEmail == null || rawEmail.isBlank()) {
             throw new AppException(ErrorCode.INVALID_EMAIL_FORMAT);
@@ -38,6 +43,9 @@ public class EmailVerificationService {
         if (!EMAIL_REGEX.matcher(email).matches()) {
             throw new AppException(ErrorCode.INVALID_EMAIL_FORMAT);
         }
+        transactionLock.lock(
+                PostgresTransactionAdvisoryLock.Scope.EMAIL_VERIFICATION_REQUEST,
+                email);
         if (memberRepository.existsByEmail(email)) {
             throw new AppException(ErrorCode.DUPLICATE_EMAIL);
         }
@@ -45,7 +53,7 @@ public class EmailVerificationService {
         String code = generateCode();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(CODE_EXPIRY_MINUTES);
 
-        EmailVerificationCode record = codeRepository.findByEmail(email).orElseGet(() ->
+        EmailVerificationCode record = codeRepository.findByEmailForUpdate(email).orElseGet(() ->
                 EmailVerificationCode.builder()
                         .email(email)
                         .code(passwordEncoder.encode(code))
@@ -59,21 +67,26 @@ public class EmailVerificationService {
         record.setVerifiedAt(null);
         codeRepository.save(record);
 
-        emailService.sendVerificationCode(email, code);
+        emailService.queueVerificationCode(
+                email, code, NotificationOutboxService.newIdempotencyKey());
 
         return expiresAt;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = VerificationCodeMismatchException.class)
     public String verifyCode(String rawEmail, String rawCode) {
         if (rawEmail == null || rawEmail.isBlank() || rawCode == null || rawCode.isBlank()) {
-            throw new AppException(ErrorCode.VERIFICATION_CODE_MISMATCH);
+            throw new VerificationCodeMismatchException();
         }
         String email = rawEmail.trim().toLowerCase();
         String code = rawCode.trim();
 
-        EmailVerificationCode record = codeRepository.findByEmail(email)
+        EmailVerificationCode record = codeRepository.findByEmailForUpdate(email)
                 .orElseThrow(() -> new AppException(ErrorCode.VERIFICATION_CODE_NOT_REQUESTED));
+
+        if (record.getVerifiedAt() != null) {
+            throw new AppException(ErrorCode.INVALID_VERIFIED_TOKEN);
+        }
 
         if (record.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new AppException(ErrorCode.VERIFICATION_CODE_EXPIRED);
@@ -84,7 +97,7 @@ public class EmailVerificationService {
         if (!passwordEncoder.matches(code, record.getCode())) {
             record.setAttempts(record.getAttempts() + 1);
             codeRepository.save(record);
-            throw new AppException(ErrorCode.VERIFICATION_CODE_MISMATCH);
+            throw new VerificationCodeMismatchException();
         }
 
         record.setVerifiedAt(LocalDateTime.now());
@@ -93,6 +106,7 @@ public class EmailVerificationService {
         return jwtService.generateEmailVerifiedToken(email);
     }
 
+    @Transactional
     public void requireVerified(String email, String verifiedToken) {
         if (verifiedToken == null || verifiedToken.isBlank()) {
             throw new AppException(ErrorCode.EMAIL_NOT_VERIFIED_FOR_SIGNUP);
@@ -101,7 +115,7 @@ public class EmailVerificationService {
         if (!jwtService.verifyEmailVerifiedToken(verifiedToken, normalized)) {
             throw new AppException(ErrorCode.INVALID_VERIFIED_TOKEN);
         }
-        EmailVerificationCode record = codeRepository.findByEmail(normalized)
+        EmailVerificationCode record = codeRepository.findByEmailForUpdate(normalized)
                 .orElseThrow(() -> new AppException(ErrorCode.EMAIL_NOT_VERIFIED_FOR_SIGNUP));
         if (record.getVerifiedAt() == null) {
             throw new AppException(ErrorCode.EMAIL_NOT_VERIFIED_FOR_SIGNUP);

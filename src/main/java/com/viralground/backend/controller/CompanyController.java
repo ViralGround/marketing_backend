@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
 
@@ -36,6 +37,9 @@ public class CompanyController {
     private final AuditService auditService;
     private final AccountWithdrawalService accountWithdrawalService;
     private final AuthCookieService authCookieService;
+
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
 
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> dashboard(@AuthenticationPrincipal AuthUser authUser) {
@@ -102,10 +106,25 @@ public class CompanyController {
             @PathVariable Integer id,
             @AuthenticationPrincipal AuthUser authUser) {
         requireCompany(authUser);
+        requirePaymentsEnabled();
         escrowService.requestDeposit(id, authUser.getId());
         auditService.record(authUser, AuditAction.PAYMENT_STATE_CHANGED,
                 "campaign", id, "SUCCESS", "DEPOSIT_REQUESTED");
         return ResponseEntity.ok(Map.of("message", "입금 확인을 요청했습니다. 관리자 검토 후 모집이 시작됩니다."));
+    }
+
+    @PostMapping("/campaigns/{id}/publish")
+    public ResponseEntity<Map<String, String>> publishCampaign(
+            @PathVariable Integer id,
+            @AuthenticationPrincipal AuthUser authUser) {
+        requireCompany(authUser);
+        if (paymentsFeatureEnabled) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+        companyService.publishManagedBetaCampaign(id, authUser.getId());
+        auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
+                "campaign", id, "SUCCESS", "PUBLISHED_NONFINANCIAL");
+        return ResponseEntity.ok(Map.of("message", "캠페인이 모집 상태로 공개되었습니다."));
     }
 
     @PatchMapping("/campaigns/{id}")
@@ -158,5 +177,9 @@ public class CompanyController {
         if (authUser == null || authUser.getRole() != Role.COMPANY) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
+    }
+
+    private void requirePaymentsEnabled() {
+        if (!paymentsFeatureEnabled) throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
     }
 }

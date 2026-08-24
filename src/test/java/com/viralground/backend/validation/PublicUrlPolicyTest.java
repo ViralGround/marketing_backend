@@ -26,7 +26,7 @@ class PublicUrlPolicyTest {
             "https://127.0.0.1/admin", "https://10.1.2.3", "https://192.168.1.2",
             "https://[::1]/", "https://user:password@viralground.kr",
             "https://single-label", "https://example.test", "https://203.0.113.1",
-            "https://viral_ground.kr"
+            "https://viral_ground.kr", "https://viralground.kr/path#private-fragment"
     })
     void rejectsNonPublicOrUnsafeUrls(String url) {
         assertThatThrownBy(() -> PublicUrlPolicy.normalizeOptional(url))
@@ -44,6 +44,21 @@ class PublicUrlPolicyTest {
                 .isEqualTo(ErrorCode.INVALID_PUBLIC_URL);
         assertThatThrownBy(() -> PublicUrlPolicy.normalizeOptional(
                 "https://viralground.kr/" + "a".repeat(480)))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_PUBLIC_URL);
+    }
+
+    @Test
+    void requiredUrlRejectsBlankAndSurroundingWhitespace() {
+        assertThat(PublicUrlPolicy.normalizeRequired("https://www.viralground.kr/reel/10"))
+                .isEqualTo("https://www.viralground.kr/reel/10");
+        assertThatThrownBy(() -> PublicUrlPolicy.normalizeRequired("   "))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_PUBLIC_URL);
+        assertThatThrownBy(() -> PublicUrlPolicy.normalizeRequired(
+                " https://www.viralground.kr/reel/10"))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_PUBLIC_URL);

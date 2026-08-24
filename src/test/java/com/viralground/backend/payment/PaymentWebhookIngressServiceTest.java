@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -32,6 +33,7 @@ class PaymentWebhookIngressServiceTest {
     void setUp() {
         when(verifier.providerName()).thenReturn("provider");
         service = new PaymentWebhookIngressService(repository, List.of(verifier));
+        ReflectionTestUtils.setField(service, "paymentsFeatureEnabled", true);
         payload = "{\"id\":\"evt-1\"}".getBytes(StandardCharsets.UTF_8);
     }
 

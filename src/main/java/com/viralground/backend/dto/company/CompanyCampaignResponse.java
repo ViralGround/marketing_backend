@@ -1,6 +1,5 @@
 package com.viralground.backend.dto.company;
 
-import com.viralground.backend.entity.ApplicationStatus;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignStatus;
 import com.viralground.backend.entity.EscrowStatus;
@@ -63,7 +62,7 @@ public class CompanyCampaignResponse {
 
     public record ApplicationItem(
             Integer id,
-            ApplicationStatus status,
+            String status,
             String message,
             String submissionUrl,
             String videoUrl,

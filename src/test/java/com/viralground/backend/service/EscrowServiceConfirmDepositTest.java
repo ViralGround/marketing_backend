@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +39,7 @@ class EscrowServiceConfirmDepositTest {
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(service, "paymentsFeatureEnabled", true);
         campaign = Campaign.builder()
                 .id(1).title("campaign").totalBudget(100_000)
                 .status(CampaignStatus.DRAFT)

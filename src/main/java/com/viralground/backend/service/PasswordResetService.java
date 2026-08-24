@@ -1,13 +1,16 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.config.PostgresTransactionAdvisoryLock;
 import com.viralground.backend.entity.Member;
 import com.viralground.backend.entity.MemberStatus;
 import com.viralground.backend.entity.PasswordResetCode;
 import com.viralground.backend.entity.RefreshToken;
 import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
+import com.viralground.backend.exception.PasswordResetRejectedException;
 import com.viralground.backend.logging.AuditAction;
 import com.viralground.backend.logging.AuditEvent;
+import com.viralground.backend.notification.NotificationOutboxService;
 import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.repository.PasswordResetCodeRepository;
 import com.viralground.backend.repository.RefreshTokenRepository;
@@ -16,9 +19,11 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -37,6 +42,8 @@ public class PasswordResetService {
     private static final Pattern EMAIL_REGEX = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final long CODE_EXPIRY_MINUTES = 5;
     private static final int MAX_ATTEMPTS = 5;
+    private static final String DUMMY_RESET_CODE_HASH =
+            "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
     private final PasswordResetCodeRepository codeRepository;
     private final MemberRepository memberRepository;
@@ -44,13 +51,14 @@ public class PasswordResetService {
     private final EmailService emailService;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
+    private final PostgresTransactionAdvisoryLock transactionLock;
     private final SecureRandom random = new SecureRandom();
 
     /**
      * 코드 발송. 반환되는 만료 시각은 상수 오프셋이라 가입 여부를 드러내지 않는다.
      * 미가입·탈퇴 이메일이면 아무것도 저장/발송하지 않고 조용히 같은 값으로 끝난다.
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public LocalDateTime requestCode(String rawEmail) {
         if (rawEmail == null || rawEmail.isBlank()) {
             throw new AppException(ErrorCode.INVALID_EMAIL_FORMAT);
@@ -60,63 +68,75 @@ public class PasswordResetService {
             throw new AppException(ErrorCode.INVALID_EMAIL_FORMAT);
         }
 
+        transactionLock.lock(
+                PostgresTransactionAdvisoryLock.Scope.PASSWORD_RESET_REQUEST,
+                email);
+
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(CODE_EXPIRY_MINUTES);
 
-        boolean eligible = memberRepository.findByEmail(email)
+        boolean memberEligible = memberRepository.findByEmail(email)
                 .map(member -> member.getStatus() != MemberStatus.WITHDRAWN)
                 .orElse(false);
+        boolean eligible = memberEligible
+                && emailService.canDeliverAuthenticationCode(email);
+        // BCrypt dominates this endpoint's observable CPU time. Perform the
+        // same hash work for unknown/withdrawn and eligible identities, then
+        // discard it when no delivery is permitted.
+        String code = generateCode();
+        String encodedCode = passwordEncoder.encode(code);
         if (!eligible) {
             return expiresAt;
         }
 
-        String code = generateCode();
-        PasswordResetCode record = codeRepository.findByEmail(email).orElseGet(() ->
+        PasswordResetCode record = codeRepository.findByEmailForUpdate(email).orElseGet(() ->
                 PasswordResetCode.builder()
                         .email(email)
-                        .code(passwordEncoder.encode(code))
+                        .code(encodedCode)
                         .expiresAt(expiresAt)
                         .attempts(0)
                         .build()
         );
-        record.setCode(passwordEncoder.encode(code));
+        record.setCode(encodedCode);
         record.setExpiresAt(expiresAt);
         record.setAttempts(0);
         codeRepository.save(record);
 
-        emailService.sendPasswordResetCode(email, code);
+        emailService.queuePasswordResetCode(
+                email, code, NotificationOutboxService.newIdempotencyKey());
 
         return expiresAt;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = PasswordResetRejectedException.class)
     public void reset(String rawEmail, String rawCode, String newPassword) {
-        if (rawEmail == null || rawEmail.isBlank() || rawCode == null || rawCode.isBlank()) {
-            throw new AppException(ErrorCode.VERIFICATION_CODE_MISMATCH);
-        }
-        String email = rawEmail.trim().toLowerCase();
-        String code = rawCode.trim();
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
+        String code = rawCode == null ? "" : rawCode.trim();
+        Optional<PasswordResetCode> candidate = email.isBlank()
+                ? Optional.empty() : codeRepository.findByEmailForUpdate(email);
+        PasswordResetCode record = candidate.orElse(null);
 
-        PasswordResetCode record = codeRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(ErrorCode.VERIFICATION_CODE_NOT_REQUESTED));
-
-        if (record.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new AppException(ErrorCode.VERIFICATION_CODE_EXPIRED);
+        // Unknown identities, expired rows, and real rows all pay one BCrypt
+        // verification cost before the generic response is selected.
+        boolean codeMatches = passwordEncoder.matches(
+                code, record == null ? DUMMY_RESET_CODE_HASH : record.getCode());
+        LocalDateTime now = LocalDateTime.now();
+        if (record == null || record.getExpiresAt().isBefore(now)
+                || record.getAttempts() >= MAX_ATTEMPTS) {
+            throw new PasswordResetRejectedException();
         }
-        if (record.getAttempts() >= MAX_ATTEMPTS) {
-            throw new AppException(ErrorCode.VERIFICATION_ATTEMPTS_EXCEEDED);
-        }
-        if (!passwordEncoder.matches(code, record.getCode())) {
+        if (!codeMatches) {
             record.setAttempts(record.getAttempts() + 1);
             codeRepository.save(record);
-            throw new AppException(ErrorCode.VERIFICATION_CODE_MISMATCH);
+            throw new PasswordResetRejectedException();
         }
 
         // 코드 검증을 통과한 뒤에도 회원이 사라졌으면(탈퇴 등) 같은 "미요청" 오류로 끝낸다.
         Member member = memberRepository.findByEmail(email)
                 .filter(m -> m.getStatus() != MemberStatus.WITHDRAWN)
-                .orElseThrow(() -> new AppException(ErrorCode.VERIFICATION_CODE_NOT_REQUESTED));
+                .orElseThrow(PasswordResetRejectedException::new);
 
         member.setPassword(passwordEncoder.encode(newPassword));
+        member.incrementAuthVersion();
         memberRepository.save(member);
 
         // 재설정 코드는 일회용 — 성공 즉시 폐기.

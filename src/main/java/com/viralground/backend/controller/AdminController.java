@@ -2,6 +2,7 @@ package com.viralground.backend.controller;
 
 import com.viralground.backend.config.AuthUser;
 import com.viralground.backend.dto.admin.CampaignDetailResponse;
+import com.viralground.backend.dto.admin.AuditLogPageResponse;
 import com.viralground.backend.dto.admin.ContactRequestResponse;
 import com.viralground.backend.dto.admin.MemberDetailResponse;
 import com.viralground.backend.dto.admin.ReelAnalyticsResponse;
@@ -27,14 +28,22 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 
 @RestController
 @RequestMapping("/admin")
 @RequiredArgsConstructor
 public class AdminController {
+
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
+
+    @Value("${features.instagram.enabled:false}")
+    private boolean instagramFeatureEnabled = false;
 
     private final AdminService adminService;
     private final EscrowService escrowService;
@@ -54,6 +63,7 @@ public class AdminController {
 
     @GetMapping("/reel-analytics")
     ResponseEntity<ReelAnalyticsResponse> getReelAnalytics() {
+        requireInstagramEnabled();
         return ResponseEntity.ok(reelAnalyticsService.getDashboard());
     }
 
@@ -61,6 +71,7 @@ public class AdminController {
     @PostMapping("/reel-analytics/sync")
     ResponseEntity<Map<String, Integer>> syncReelAnalytics(
             @AuthenticationPrincipal AuthUser authUser) {
+        requireInstagramEnabled();
         SyncResult result = reelMetricSyncService.syncAll();
         auditService.record(authUser, AuditAction.METRICS_SYNC_TRIGGERED,
                 "instagramMetrics", null, "SUCCESS",
@@ -174,6 +185,7 @@ public class AdminController {
     ResponseEntity<Map<String, String>> updateApplication(@PathVariable Integer id,
                                                           @Valid @RequestBody UpdateApplicationStatusRequest req,
                                                           @AuthenticationPrincipal AuthUser authUser) {
+        if ("SETTLED".equals(req.getStatus().name())) requirePaymentsEnabled();
         adminService.updateApplication(id, req, authUser.getId());
         auditService.record(authUser, AuditAction.CAMPAIGN_STATE_CHANGED,
                 "campaignApplication", id, "SUCCESS", req.getStatus().name());
@@ -184,6 +196,7 @@ public class AdminController {
 
     @GetMapping("/escrow/pending")
     ResponseEntity<Map<String, Object>> getPendingEscrow() {
+        requirePaymentsEnabled();
         return ResponseEntity.ok(Map.of("campaigns", adminService.getPendingEscrowCampaigns()));
     }
 
@@ -193,6 +206,7 @@ public class AdminController {
             @AuthenticationPrincipal AuthUser authUser,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Operation-Reason", defaultValue = "관리자 입금 확인") String reason) {
+        requirePaymentsEnabled();
         escrowService.confirmDeposit(id, PaymentActor.admin(authUser.getId()), reason, idempotencyKey);
         auditService.record(authUser, AuditAction.PAYMENT_STATE_CHANGED,
                 "campaign", id, "SUCCESS", reason);
@@ -204,6 +218,7 @@ public class AdminController {
             @PathVariable Integer id,
             @AuthenticationPrincipal AuthUser authUser,
             @RequestHeader(value = "X-Operation-Reason", defaultValue = "관리자 입금 확인 반려") String reason) {
+        requirePaymentsEnabled();
         escrowService.rejectDeposit(id, PaymentActor.admin(authUser.getId()), reason);
         auditService.record(authUser, AuditAction.PAYMENT_STATE_CHANGED,
                 "campaign", id, "SUCCESS", reason);
@@ -216,6 +231,7 @@ public class AdminController {
             @AuthenticationPrincipal AuthUser authUser,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-Operation-Reason", defaultValue = "관리자 강제 입금 확인") String reason) {
+        requirePaymentsEnabled();
         escrowService.forceConfirmDeposit(id, PaymentActor.admin(authUser.getId()), reason, idempotencyKey);
         auditService.record(authUser, AuditAction.PAYMENT_STATE_CHANGED,
                 "campaign", id, "SUCCESS", reason);
@@ -230,5 +246,36 @@ public class AdminController {
                 .map(ContactRequestResponse::from)
                 .toList();
         return ResponseEntity.ok(Map.of("contacts", contacts));
+    }
+
+    // ── 감사로그 조회(읽기 전용) ─────────────────────────────────
+
+    @GetMapping("/audit-logs")
+    ResponseEntity<AuditLogPageResponse> getAuditLogs(
+            @RequestParam(required = false) AuditAction action,
+            @RequestParam(required = false) Integer actorId,
+            @RequestParam(required = false) String resourceType,
+            @RequestParam(required = false) String resourceId,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(auditService.search(
+                action, actorId, resourceType, resourceId, from, to, page, size));
+    }
+
+    private void requirePaymentsEnabled() {
+        if (!paymentsFeatureEnabled) {
+            throw new com.viralground.backend.exception.AppException(
+                    com.viralground.backend.exception.ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
+    }
+
+    private void requireInstagramEnabled() {
+        if (!instagramFeatureEnabled) {
+            throw new com.viralground.backend.instagram.InstagramIntegrationException(
+                    "INSTAGRAM_FEATURE_DISABLED", "Instagram 연동 기능이 활성화되지 않았습니다",
+                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 }

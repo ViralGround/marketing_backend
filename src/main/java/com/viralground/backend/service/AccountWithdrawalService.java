@@ -117,7 +117,7 @@ public class AccountWithdrawalService {
     }
 
     private void disconnectProviderAndLocally(Integer memberId) {
-        instagramConnectionRepository.findByCreatorId(memberId).ifPresent(connection -> {
+        instagramConnectionRepository.findByCreatorIdForUpdate(memberId).ifPresent(connection -> {
             // 외부 토큰 철회 실패 시 탈퇴를 완료한 척하지 않는다. 사용자가 재시도하거나 지원팀이
             // 공급자 상태를 확인해야 로컬 증적과 Meta 권한이 어긋나지 않는다.
             instagramConnectionProvider.revoke(connection);

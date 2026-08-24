@@ -1,8 +1,11 @@
 package com.viralground.backend.instagram.oauth;
 
+import com.viralground.backend.config.PreproductionScheduledMutationGuard;
 import com.viralground.backend.instagram.InstagramIntegrationException;
 import com.viralground.backend.instagram.meta.MetaInstagramProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -31,7 +34,13 @@ class InstagramOAuthStateStoreTest {
             Duration.ofMinutes(10), Duration.ofSeconds(3), Duration.ofSeconds(8),
             Duration.ZERO, Duration.ofDays(7), 3, 50, 3, 14);
     private final InstagramOAuthStateStore store = new InstagramOAuthStateStore(
-            repository, properties, clock, new SecureRandom(new byte[]{1, 2, 3}));
+            repository, properties, clock, new SecureRandom(new byte[]{1, 2, 3}),
+            mock(PreproductionScheduledMutationGuard.class));
+
+    @BeforeEach
+    void enableInstagram() {
+        ReflectionTestUtils.setField(store, "instagramFeatureEnabled", true);
+    }
 
     @Test
     void issueStoresOnlyHashAndInvalidatesPreviousUnusedState() {
@@ -51,13 +60,14 @@ class InstagramOAuthStateStoreTest {
     @Test
     void claimMarksValidStateUsedExactlyOnce() {
         InstagramOAuthState state = InstagramOAuthState.builder()
-                .creatorId(7).stateHash("hash")
+                .id(11L).creatorId(7).stateHash("hash")
                 .createdAt(LocalDateTime.ofInstant(now.minusSeconds(1), ZoneOffset.UTC))
                 .expiresAt(LocalDateTime.ofInstant(now.plusSeconds(60), ZoneOffset.UTC)).build();
         when(repository.findByStateHashForUpdate(InstagramOAuthStateStore.hash("nonce")))
                 .thenReturn(Optional.of(state));
 
-        assertThat(store.claim("nonce")).isEqualTo(7);
+        assertThat(store.claim("nonce"))
+                .isEqualTo(new InstagramOAuthStateStore.ClaimedState(7, 11L));
         assertThat(state.getUsedAt()).isEqualTo(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
         verify(repository).save(state);
     }

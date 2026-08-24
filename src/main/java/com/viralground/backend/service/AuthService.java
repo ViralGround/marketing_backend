@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.List;
 import io.jsonwebtoken.Claims;
 
 @Service
@@ -183,25 +184,45 @@ public class AuthService {
         return session;
     }
 
-    @Transactional
+    // Replay/auth-version rejection revokes the whole refresh-token family and then
+    // deliberately throws AppException. That security mutation must commit even
+    // though the HTTP request is rejected; infrastructure failures still roll back.
+    @Transactional(noRollbackFor = AppException.class)
     public TokenResponse refresh(String rawRefreshToken) {
         Claims claims = jwtService.parseToken(rawRefreshToken);
-        if (!jwtService.isTokenType(claims, "refresh") || claims.getId() == null) {
+        String familyId = claims == null ? null : claims.get("family_id", String.class);
+        Integer claimedMemberId = parseMemberId(claims == null ? null : claims.getSubject());
+        if (!jwtService.isTokenType(claims, "refresh") || claims.getId() == null
+                || familyId == null || familyId.isBlank() || claimedMemberId == null) {
             throw new AppException(ErrorCode.INVALID_TOKEN);
         }
 
-        RefreshToken stored = refreshTokenRepository.findById(claims.getId())
-                .orElseThrow(() -> new AppException(ErrorCode.INVALID_TOKEN));
-        if (!stored.isUsable(Instant.now())) {
-            revokeFamily(stored.getFamilyId());
-            throw new AppException(ErrorCode.INVALID_TOKEN);
-        }
-
-        Member member = memberRepository.findById(stored.getMemberId())
+        // Member lock prevents a concurrent rotation from inserting a phantom child
+        // after a replay request has read the family. The signed family claim then
+        // selects and locks the full chain in deterministic token-id order.
+        Member member = memberRepository.findByIdForUpdate(claimedMemberId)
                 .filter(m -> m.getStatus() == MemberStatus.APPROVED && Boolean.TRUE.equals(m.getEmailVerified()))
                 .orElseThrow(() -> new AppException(ErrorCode.INVALID_TOKEN));
+        List<RefreshToken> lockedFamily = refreshTokenRepository.findAllByFamilyIdForUpdate(familyId);
+        RefreshToken stored = lockedFamily.stream()
+                .filter(token -> claims.getId().equals(token.getTokenId()))
+                .findFirst()
+                .orElseThrow(() -> new AppException(ErrorCode.INVALID_TOKEN));
+        if (!stored.getMemberId().equals(member.getId()) || !stored.getFamilyId().equals(familyId)) {
+            revokeFamily(lockedFamily);
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
+        if (!stored.isUsable(Instant.now())) {
+            revokeFamily(lockedFamily);
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
 
-        JwtService.IssuedRefreshToken issued = jwtService.generateRefreshToken(member, stored.getFamilyId());
+        if (!jwtService.hasCurrentAuthVersion(claims, member)) {
+            revokeFamily(lockedFamily);
+            throw new AppException(ErrorCode.INVALID_TOKEN);
+        }
+
+        JwtService.IssuedRefreshToken issued = jwtService.generateRefreshToken(member, familyId);
         stored.rotateTo(issued.tokenId());
         refreshTokenRepository.save(stored);
         refreshTokenRepository.save(new RefreshToken(
@@ -212,12 +233,28 @@ public class AuthService {
     @Transactional
     public void logout(String rawRefreshToken) {
         Claims claims = jwtService.parseToken(rawRefreshToken);
-        if (claims == null || claims.getId() == null) return;
-        refreshTokenRepository.findById(claims.getId()).ifPresent(stored -> {
-            stored.revoke();
-            eventPublisher.publishEvent(new AuditEvent(stored.getMemberId(), null,
-                    AuditAction.MEMBER_LOGOUT, "member", stored.getMemberId(), "SUCCESS", null));
-        });
+        String familyId = claims == null ? null : claims.get("family_id", String.class);
+        Integer claimedMemberId = parseMemberId(claims == null ? null : claims.getSubject());
+        if (!jwtService.isTokenType(claims, "refresh") || claims.getId() == null
+                || familyId == null || familyId.isBlank() || claimedMemberId == null) return;
+
+        // Refresh takes these locks in the same order. Consequently logout either
+        // precedes a rotation (which then sees a revoked family) or follows it and
+        // revokes the newly inserted child as part of the same locked family.
+        Member member = memberRepository.findByIdForUpdate(claimedMemberId).orElse(null);
+        if (member == null) return;
+        List<RefreshToken> lockedFamily =
+                refreshTokenRepository.findAllByFamilyIdForUpdate(familyId);
+        RefreshToken presented = lockedFamily.stream()
+                .filter(token -> claims.getId().equals(token.getTokenId()))
+                .findFirst()
+                .orElse(null);
+        if (presented == null || !presented.getMemberId().equals(member.getId())
+                || !presented.getFamilyId().equals(familyId)) return;
+
+        revokeFamily(lockedFamily);
+        eventPublisher.publishEvent(new AuditEvent(member.getId(), member.getRole().name(),
+                AuditAction.MEMBER_LOGOUT, "member", member.getId(), "SUCCESS", null));
     }
 
     private TokenResponse issueSession(Member member, String familyId) {
@@ -227,8 +264,16 @@ public class AuthService {
         return new TokenResponse(jwtService.generateAccessToken(member), issued.token());
     }
 
-    private void revokeFamily(String familyId) {
-        refreshTokenRepository.findAllByFamilyId(familyId).forEach(RefreshToken::revoke);
+    private void revokeFamily(List<RefreshToken> family) {
+        family.forEach(RefreshToken::revoke);
+    }
+
+    private Integer parseMemberId(String subject) {
+        try {
+            return subject == null ? null : Integer.valueOf(subject);
+        } catch (NumberFormatException invalidSubject) {
+            return null;
+        }
     }
 
     private String normalize(String email) {

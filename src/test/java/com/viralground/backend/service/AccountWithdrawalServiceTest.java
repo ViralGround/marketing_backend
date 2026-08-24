@@ -84,7 +84,8 @@ class AccountWithdrawalServiceTest {
                 .id(11).creatorId(7).campaignId(5).status(ApplicationStatus.PENDING).build();
         when(applicationRepository.findByCreatorIdAndStatus(7, ApplicationStatus.PENDING))
                 .thenReturn(List.of(pending));
-        when(instagramConnectionRepository.findByCreatorId(7)).thenReturn(Optional.of(connection));
+        when(instagramConnectionRepository.findByCreatorIdForUpdate(7))
+                .thenReturn(Optional.of(connection));
         when(creatorProfileRepository.findByMemberId(7)).thenReturn(Optional.of(profile));
 
         service.withdrawCreator(7);
@@ -93,6 +94,7 @@ class AccountWithdrawalServiceTest {
         verify(memberRepository).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(MemberStatus.WITHDRAWN);
         assertThat(saved.getValue().getWithdrawnAt()).isEqualTo(now);
+        assertThat(saved.getValue().getAuthVersion()).isEqualTo(1L);
         assertThat(saved.getValue().getMarketingOptInAt()).isNull();
         ArgumentCaptor<MarketingConsentEvent> marketingEvent =
                 ArgumentCaptor.forClass(MarketingConsentEvent.class);

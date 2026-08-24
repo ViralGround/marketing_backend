@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,6 +25,9 @@ public class MetaInstagramOAuthCallbackController {
     private final InstagramConnectionService connectionService;
     private final MetaInstagramProperties properties;
 
+    @Value("${features.instagram.enabled:false}")
+    private boolean instagramFeatureEnabled;
+
     public MetaInstagramOAuthCallbackController(InstagramConnectionService connectionService,
                                                 MetaInstagramProperties properties) {
         this.connectionService = connectionService;
@@ -35,6 +39,11 @@ public class MetaInstagramOAuthCallbackController {
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String state,
             @RequestParam(required = false) String error) {
+        // A disabled public callback must never redirect to a configured or
+        // default frontend URL; return an explicit fail-closed response first.
+        if (!instagramFeatureEnabled) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
         try {
             if (error != null) {
                 connectionService.cancelAuthorization(state);

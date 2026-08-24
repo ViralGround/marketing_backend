@@ -1,6 +1,34 @@
 -- ViralGround payment/escrow append-only foundation.
 -- V1 creates the pre-existing schema. V3 enriches legacy rows and creates balanced ledger/webhook tables.
 
+-- Never normalize corrupt legacy money rows into apparently valid ledger state.
+-- The separate clone preflight reports counts first; these checks are the final
+-- transactional fail-closed boundary if a migration is invoked another way.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM escrow_transactions WHERE amount <= 0) THEN
+        RAISE EXCEPTION 'V3 legacy escrow audit failed: nonpositive amount';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM escrow_transactions
+        WHERE type NOT IN ('DEPOSIT', 'RELEASE', 'REFUND')
+    ) THEN
+        RAISE EXCEPTION 'V3 legacy escrow audit failed: unknown transaction type';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM (
+            SELECT SUM(CASE WHEN type = 'DEPOSIT' THEN amount ELSE -amount END)
+                     OVER (PARTITION BY campaign_id ORDER BY created_at, id) AS running_balance
+            FROM escrow_transactions
+        ) balances
+        WHERE running_balance < 0
+    ) THEN
+        RAISE EXCEPTION 'V3 legacy escrow audit failed: negative running balance';
+    END IF;
+END
+$$;
+
 ALTER TABLE escrow_transactions ADD COLUMN operation_id VARCHAR(64);
 ALTER TABLE escrow_transactions ADD COLUMN idempotency_key VARCHAR(160);
 ALTER TABLE escrow_transactions ADD COLUMN currency VARCHAR(3) DEFAULT 'KRW';

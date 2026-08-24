@@ -16,10 +16,12 @@ import com.viralground.backend.repository.MemberRepository;
 import com.viralground.backend.storage.FileStorage;
 import com.viralground.backend.storage.UploadOwnershipService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
@@ -48,6 +50,12 @@ class CompanyServiceCreateCampaignTest {
 
     @InjectMocks
     CompanyService companyService;
+
+    @BeforeEach
+    void enableLegacyFeatures() {
+        ReflectionTestUtils.setField(companyService, "uploadsFeatureEnabled", true);
+        ReflectionTestUtils.setField(companyService, "paymentsFeatureEnabled", true);
+    }
 
     @Test
     void should_signed_url_응답_when_thumbnailFileKey_입력() {

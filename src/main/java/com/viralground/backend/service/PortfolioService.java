@@ -16,6 +16,7 @@ import com.viralground.backend.repository.ReviewRepository;
 import com.viralground.backend.repository.SubmissionMetricRepository;
 import com.viralground.backend.repository.CreatorProfileRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,15 +37,18 @@ public class PortfolioService {
     private final SubmissionMetricRepository metricRepository;
     private final CreatorProfileRepository creatorProfileRepository;
 
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled;
+
     @Transactional(readOnly = true)
     public Map<String, Object> getPortfolio(Integer creatorId) {
         Member creator = memberRepository.findById(creatorId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-        // SETTLED application 만 포트폴리오로 노출
+        // 관리형 베타 COMPLETED와 legacy SETTLED 완료 건만 포트폴리오로 노출
         List<CampaignApplication> settled = applicationRepository
                 .findByCreatorIdOrderByAppliedAtDesc(creatorId).stream()
-                .filter(a -> a.getStatus() == ApplicationStatus.SETTLED)
+                .filter(CampaignApplication::isCompletedWork)
                 .toList();
 
         Map<Integer, Campaign> campaignById = settled.isEmpty()
@@ -61,9 +65,11 @@ public class PortfolioService {
             m.put("campaignId", a.getCampaignId());
             m.put("campaignTitle", c != null ? c.getTitle() : "");
             m.put("brandName", c != null ? c.getBrandName() : "");
-            m.put("rewardPaidAmount", a.getRewardPaidAmount());
+            if (paymentsFeatureEnabled) m.put("rewardPaidAmount", a.getRewardPaidAmount());
             m.put("videoFileKey", a.getVideoFileKey());
             m.put("settledAt", a.getSettledAt());
+            m.put("completedAt", a.getContentApprovedAt() != null
+                    ? a.getContentApprovedAt() : a.getSettledAt());
             return m;
         }).toList();
 
@@ -73,7 +79,7 @@ public class PortfolioService {
                 ? 0.0
                 : received.stream().mapToInt(Review::getRating).average().orElse(0.0);
 
-        // 성과 집계: SETTLED 지원의 metric 합계. 기업이 승인 전 퍼포먼스를 가늠하는 핵심 근거.
+        // 성과 집계: 완료(COMPLETED/SETTLED) 지원의 metric 합계.
         Object[] metricSum = metricRepository.sumByCreatorId(creatorId);
         long totalViews = metricSum.length > 0 && metricSum[0] instanceof Number n ? n.longValue() : 0L;
         long totalLikes = metricSum.length > 1 && metricSum[1] instanceof Number n ? n.longValue() : 0L;
@@ -112,7 +118,7 @@ public class PortfolioService {
 
         List<CampaignApplication> settled = applicationRepository
                 .findByCreatorIdOrderByAppliedAtDesc(creatorId).stream()
-                .filter(a -> a.getStatus() == ApplicationStatus.SETTLED)
+                .filter(CampaignApplication::isCompletedWork)
                 .toList();
         Map<Integer, Campaign> campaignById = settled.isEmpty() ? Map.of() : campaignRepository
                 .findAllById(settled.stream().map(CampaignApplication::getCampaignId).distinct().toList())
@@ -124,6 +130,8 @@ public class PortfolioService {
             item.put("campaignTitle", campaign == null ? "" : campaign.getTitle());
             item.put("brandName", campaign == null ? "" : campaign.getBrandName());
             item.put("settledAt", a.getSettledAt());
+            item.put("completedAt", a.getContentApprovedAt() != null
+                    ? a.getContentApprovedAt() : a.getSettledAt());
             return item;
         }).toList();
 

@@ -15,9 +15,11 @@ import com.viralground.backend.repository.SubmissionMetricRepository;
 import com.viralground.backend.storage.FileStorage;
 import com.viralground.backend.validation.CampaignBudgetPolicy;
 import com.viralground.backend.payment.PaymentActor;
+import com.viralground.backend.config.StagingAccountProvisioningPolicy;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -43,6 +45,13 @@ public class AdminService {
     private final ReviewRepository reviewRepository;
     private final SubmissionMetricRepository metricRepository;
     private final FileStorage fileStorage;
+    private final StagingAccountProvisioningPolicy stagingAccountProvisioningPolicy;
+
+    @Value("${features.uploads.enabled:false}")
+    private boolean uploadsFeatureEnabled = false;
+
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
 
     private String resolveThumbUrl(Campaign c) {
         if (c.getThumbnailFileKey() != null && !c.getThumbnailFileKey().isBlank()) {
@@ -140,6 +149,7 @@ public class AdminService {
     public void updateMemberStatus(Integer id, MemberStatus newStatus) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        stagingAccountProvisioningPolicy.requireAllowedApproval(member, newStatus);
         if (member.getStatus() == MemberStatus.WITHDRAWN || newStatus == MemberStatus.WITHDRAWN) {
             throw new AppException(ErrorCode.INVALID_MEMBER_STATUS_TRANSITION);
         }
@@ -231,13 +241,17 @@ public class AdminService {
 
         boolean immediatelyOpen = req.getImmediatelyOpen() == null || req.getImmediatelyOpen();
 
-        if (req.getThumbnailFileKey() != null && !req.getThumbnailFileKey().isBlank()
-                && !fileStorage.exists(req.getThumbnailFileKey())) {
-            throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+        if (req.getThumbnailFileKey() != null && !req.getThumbnailFileKey().isBlank()) {
+            requireUploadsEnabled();
+            if (!fileStorage.exists(req.getThumbnailFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
         }
-        if (req.getBrandLogoFileKey() != null && !req.getBrandLogoFileKey().isBlank()
-                && !fileStorage.exists(req.getBrandLogoFileKey())) {
-            throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+        if (req.getBrandLogoFileKey() != null && !req.getBrandLogoFileKey().isBlank()) {
+            requireUploadsEnabled();
+            if (!fileStorage.exists(req.getBrandLogoFileKey())) {
+                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            }
         }
 
         Campaign.CampaignBuilder builder = Campaign.builder()
@@ -254,15 +268,16 @@ public class AdminService {
                 .deadline(req.getDeadline())
                 .createdById(adminId);
 
-        // 즉시오픈도 먼저 DRAFT/PENDING으로 만든 뒤 EscrowService의 동일한
-        // 게이트웨이 검증·원장·멱등성 경계를 통과시킨다. DB 상태만 FUNDED로
-        // 바꾸는 관리자 우회로를 허용하지 않는다.
-        builder.status(CampaignStatus.DRAFT)
-                .escrowStatus(EscrowStatus.PENDING_DEPOSIT);
+        // 비거래형 RC는 V16의 명시적인 비금융 경계(escrow NONE)를 사용한다.
+        // 결제가 활성화된 향후 버전만 PENDING_DEPOSIT에서 게이트웨이 검증을 시작한다.
+        builder.status(!paymentsFeatureEnabled && immediatelyOpen
+                        ? CampaignStatus.OPEN : CampaignStatus.DRAFT)
+                .escrowStatus(paymentsFeatureEnabled
+                        ? EscrowStatus.PENDING_DEPOSIT : EscrowStatus.NONE);
 
         Campaign saved = campaignRepository.save(builder.build());
 
-        if (immediatelyOpen) {
+        if (paymentsFeatureEnabled && immediatelyOpen) {
             escrowService.forceConfirmDeposit(
                     saved.getId(), PaymentActor.admin(adminId), "관리자 캠페인 즉시 오픈",
                     "deposit:campaign:" + saved.getId());
@@ -275,6 +290,7 @@ public class AdminService {
     public void updateCampaign(Integer id, UpdateCampaignAdminRequest req) {
         Campaign c = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        requireNonFinancialCampaignWhenPaymentsDisabled(c);
 
         boolean budgetAffected = req.getRewardAmount() != null || req.getMaxParticipants() != null;
         Integer rewardAmount = c.getRewardAmount();
@@ -295,13 +311,19 @@ public class AdminService {
         }
 
         if (req.getThumbnailFileKey() != null) {
-            if (!req.getThumbnailFileKey().isBlank() && !fileStorage.exists(req.getThumbnailFileKey())) {
-                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            if (!req.getThumbnailFileKey().isBlank()) {
+                requireUploadsEnabled();
+                if (!fileStorage.exists(req.getThumbnailFileKey())) {
+                    throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+                }
             }
         }
         if (req.getBrandLogoFileKey() != null) {
-            if (!req.getBrandLogoFileKey().isBlank() && !fileStorage.exists(req.getBrandLogoFileKey())) {
-                throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+            if (!req.getBrandLogoFileKey().isBlank()) {
+                requireUploadsEnabled();
+                if (!fileStorage.exists(req.getBrandLogoFileKey())) {
+                    throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
+                }
             }
         }
 
@@ -329,6 +351,7 @@ public class AdminService {
     public void deleteCampaign(Integer id) {
         Campaign campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        requireNonFinancialCampaignWhenPaymentsDisabled(campaign);
         // 결제 기록은 종류와 무관하게 append-only 감사 자료다. 하나라도 있으면 캠페인과
         // 원장을 삭제하지 않고 숨김 처리를 사용한다.
         if (escrowTransactionRepository.existsByCampaignId(id)) {
@@ -500,12 +523,30 @@ public class AdminService {
         updateApplication(id, req, null);
     }
 
+    private void requireUploadsEnabled() {
+        if (!uploadsFeatureEnabled) throw new AppException(ErrorCode.UPLOAD_FEATURE_DISABLED);
+    }
+
     @Transactional
     public void updateApplication(Integer id, UpdateApplicationStatusRequest req, Integer adminActorId) {
         CampaignApplication app = applicationRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
 
+        Campaign owningCampaign = campaignRepository.findById(app.getCampaignId())
+                .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
+        requireNonFinancialCampaignWhenPaymentsDisabled(owningCampaign);
+
         ApplicationStatus newStatus = req.getStatus();
+
+        if (app.getContentApprovedAt() != null) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+        if (newStatus == ApplicationStatus.SETTLED && !paymentsFeatureEnabled) {
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
+        if (req.getRewardPaidAmount() != null && !paymentsFeatureEnabled) {
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
 
         if (req.getRewardPaidAmount() != null) {
             app.setRewardPaidAmount(req.getRewardPaidAmount());
@@ -518,19 +559,17 @@ public class AdminService {
             }
             // 예치금이 지급 가능한 상태인지 먼저 검증. 지급 실패 시 상태 전이가 일어나지 않도록
             // release() 호출 후에만 SETTLED / settledAt 을 확정한다.
-            Campaign campaign = campaignRepository.findById(app.getCampaignId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CAMPAIGN_NOT_FOUND));
-            if (campaign.getEscrowStatus() != EscrowStatus.FUNDED
-                    && campaign.getEscrowStatus() != EscrowStatus.PARTIALLY_RELEASED) {
+            if (owningCampaign.getEscrowStatus() != EscrowStatus.FUNDED
+                    && owningCampaign.getEscrowStatus() != EscrowStatus.PARTIALLY_RELEASED) {
                 throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
             }
             Integer payout = app.getRewardPaidAmount() != null
                     ? app.getRewardPaidAmount()
-                    : campaign.getRewardAmount();
+                    : owningCampaign.getRewardAmount();
             String operationReason = req.getOperationReason() == null || req.getOperationReason().isBlank()
                     ? "관리자 정산 승인" : req.getOperationReason();
             escrowService.release(
-                    campaign.getId(), app.getId(), payout,
+                    owningCampaign.getId(), app.getId(), payout,
                     adminActorId == null ? PaymentActor.system() : PaymentActor.admin(adminActorId),
                     operationReason, req.getIdempotencyKey());
             if (app.getRewardPaidAmount() == null) {
@@ -560,18 +599,22 @@ public class AdminService {
 
         if (newStatus == ApplicationStatus.APPROVED || newStatus == ApplicationStatus.REJECTED) {
             Member creator = memberRepository.findById(app.getCreatorId()).orElseThrow();
-            Campaign campaign = campaignRepository.findById(app.getCampaignId()).orElseThrow();
             emailService.notifyCreatorOfApplicationResult(
                     creator.getEmail(), creator.getName(),
-                    campaign.getTitle(), newStatus.name(), app.getRewardPaidAmount(),
+                    owningCampaign.getTitle(), newStatus.name(), app.getRewardPaidAmount(),
                     app.getReviewComment());
         }
         if (newStatus == ApplicationStatus.CHANGES_REQUESTED) {
             Member creator = memberRepository.findById(app.getCreatorId()).orElseThrow();
-            Campaign campaign = campaignRepository.findById(app.getCampaignId()).orElseThrow();
             eventPublisher.publishEvent(new ApplicationResultEvent(
                     creator.getEmail(), creator.getName(),
-                    campaign.getTitle(), "CHANGES_REQUESTED", null, app.getReviewComment()));
+                    owningCampaign.getTitle(), "CHANGES_REQUESTED", null, app.getReviewComment()));
+        }
+    }
+
+    private void requireNonFinancialCampaignWhenPaymentsDisabled(Campaign campaign) {
+        if (!paymentsFeatureEnabled && campaign.getEscrowStatus() != EscrowStatus.NONE) {
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
         }
     }
 

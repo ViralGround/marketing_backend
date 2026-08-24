@@ -46,6 +46,13 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
 
     long countByCreatorId(Integer creatorId);
 
+    @Query("""
+            SELECT COUNT(a) FROM CampaignApplication a
+            WHERE a.creatorId = :creatorId
+              AND (a.status = 'SETTLED' OR a.contentApprovedAt IS NOT NULL)
+            """)
+    long countCompletedByCreatorId(Integer creatorId);
+
     boolean existsByCreatorIdAndStatusIn(Integer creatorId, java.util.Collection<ApplicationStatus> statuses);
 
     long countByCampaignId(Integer campaignId);
@@ -70,13 +77,13 @@ public interface CampaignApplicationRepository extends JpaRepository<CampaignApp
     @Query("SELECT COALESCE(SUM(a.rewardPaidAmount), 0) FROM CampaignApplication a WHERE a.creatorId = :creatorId AND a.status = 'SETTLED'")
     Long sumRewardByCreatorId(Integer creatorId);
 
-    /** 크리에이터별 완료(SETTLED) 건수 — 공개 크리에이터 풀 목록용. 완료가 많은 순. */
+    /** 크리에이터별 완료(COMPLETED/SETTLED) 건수 — 공개 크리에이터 풀 목록용. */
     @Query("""
             SELECT a.creatorId AS creatorId, COUNT(a) AS completed
             FROM CampaignApplication a
-            WHERE a.status = 'SETTLED'
+            WHERE a.status = 'SETTLED' OR a.contentApprovedAt IS NOT NULL
             GROUP BY a.creatorId
-            ORDER BY COUNT(a) DESC, MAX(a.settledAt) DESC
+            ORDER BY COUNT(a) DESC, MAX(COALESCE(a.contentApprovedAt, a.settledAt, a.appliedAt)) DESC
             """)
     List<CreatorCompletedRow> countSettledGroupedByCreator();
 

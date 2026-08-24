@@ -43,7 +43,7 @@ public class ReviewService {
 
         CampaignApplication app = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new AppException(ErrorCode.APPLICATION_NOT_FOUND));
-        if (app.getStatus() != ApplicationStatus.SETTLED) {
+        if (!app.isCompletedWork()) {
             throw new AppException(ErrorCode.REVIEW_NOT_ALLOWED_YET);
         }
         Campaign campaign = campaignRepository.findById(app.getCampaignId())

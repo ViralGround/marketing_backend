@@ -34,7 +34,7 @@ public class PerformanceService {
     public Map<String, Object> getCreatorPerformance(Integer creatorId) {
         List<CampaignApplication> settled = applicationRepository
                 .findByCreatorIdOrderByAppliedAtDesc(creatorId).stream()
-                .filter(a -> a.getStatus() == ApplicationStatus.SETTLED)
+                .filter(CampaignApplication::isCompletedWork)
                 .toList();
 
         Map<Integer, Campaign> campaignById = settled.isEmpty()
@@ -92,7 +92,7 @@ public class PerformanceService {
         List<CampaignApplication> apps = applicationRepository
                 .findByCampaignIdOrderByAppliedAtDesc(campaignId);
         List<CampaignApplication> settled = apps.stream()
-                .filter(a -> a.getStatus() == ApplicationStatus.SETTLED)
+                .filter(CampaignApplication::isCompletedWork)
                 .toList();
 
         Map<Integer, Member> creatorById = settled.isEmpty()

@@ -73,7 +73,7 @@ public class CampaignDetailResponse {
             List<AdminSubmissionItem> submissions) {
         ApplicationInfo(CampaignApplication a, String videoUrl,
                         List<AdminSubmissionItem> submissions) {
-            this(a.getId(), a.getStatus().name(), a.getMessage(),
+            this(a.getId(), a.getApiStatus(), a.getMessage(),
                     a.getSubmissionUrl(), videoUrl,
                     a.getResubmissionCount(), a.getReviewComment(),
                     a.getRewardPaidAmount(), a.getAppliedAt(),

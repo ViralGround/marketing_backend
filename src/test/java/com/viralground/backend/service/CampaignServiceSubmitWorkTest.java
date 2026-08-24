@@ -18,11 +18,14 @@ import com.viralground.backend.storage.UploadOwnershipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -65,6 +68,7 @@ class CampaignServiceSubmitWorkTest {
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(campaignService, "uploadsFeatureEnabled", true);
         approvedApp = CampaignApplication.builder()
                 .id(42)
                 .campaignId(1)
@@ -120,6 +124,54 @@ class CampaignServiceSubmitWorkTest {
         assertThat(saved.getStatus()).isEqualTo(ApplicationStatus.SUBMITTED);
         assertThat(saved.getSubmissionUrl()).isEqualTo("https://example.com/video.mp4");
         assertThat(saved.getVideoFileKey()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "javascript:alert(1)",
+            "http://example.com/video",
+            "https://user:password@example.com/video",
+            "https://localhost/video",
+            "https://127.0.0.1/video",
+            "https://10.0.0.8/video",
+            "https://example.com/video#private-fragment",
+            "   ",
+            " https://example.com/video",
+            "https://example.com/video\nInjected: value"
+    })
+    void should_INVALID_CAMPAIGN_INPUT_when_submissionUrl_공개HTTPS_정책_위반(String unsafeUrl) {
+        when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        SubmitWorkRequest req = new SubmitWorkRequest(unsafeUrl, null, null, null);
+
+        assertThatThrownBy(() -> campaignService.submitWork(42, 7, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        verify(applicationRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void should_INVALID_CAMPAIGN_INPUT_when_submissionUrl_500자_초과() {
+        when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        SubmitWorkRequest req = new SubmitWorkRequest(
+                "https://example.com/" + "a".repeat(481), null, null, null);
+
+        assertThatThrownBy(() -> campaignService.submitWork(42, 7, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        verify(applicationRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void should_INVALID_CAMPAIGN_INPUT_when_파일과_위험URL을_함께_제출() {
+        when(applicationRepository.findById(42)).thenReturn(Optional.of(approvedApp));
+        SubmitWorkRequest req = new SubmitWorkRequest(
+                "https://localhost/internal", "submissions/abc.mp4", "video/mp4", 1024L);
+
+        assertThatThrownBy(() -> campaignService.submitWork(42, 7, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        verify(fileStorage, org.mockito.Mockito.never()).exists(anyString());
+        verify(applicationRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

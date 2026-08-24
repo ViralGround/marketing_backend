@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "provider": "<provider-slug>",
+  "providerOperationId": "<provider-native-restore-operation-id>",
+  "cloneKind": "<exact-or-sanitized>",
+  "sourceSnapshotId": "<provider-native-snapshot-or-pitr-id>",
+  "targetHost": "<isolated-clone-host>",
+  "targetDatabase": "<database_exact-or-database_staging>",
+  "status": "SUCCEEDED",
+  "restoreStartedAtUtc": "<ISO-8601-UTC>",
+  "restoreCompletedAtUtc": "<ISO-8601-UTC>",
+  "releaseId": "<approved-release-id>"
+}

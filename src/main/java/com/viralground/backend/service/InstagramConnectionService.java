@@ -5,12 +5,10 @@ import com.viralground.backend.dto.creator.InstagramConnectionResponse;
 import com.viralground.backend.entity.ConnectionStatus;
 import com.viralground.backend.entity.CreatorInstagramConnection;
 import com.viralground.backend.entity.CreatorProfile;
-import com.viralground.backend.event.InstagramConnectedEvent;
 import com.viralground.backend.logging.AuditAction;
 import com.viralground.backend.logging.AuditEvent;
 import com.viralground.backend.instagram.InstagramConnectionProvider;
 import com.viralground.backend.instagram.InstagramIntegrationException;
-import com.viralground.backend.instagram.InstagramTokenCipher;
 import com.viralground.backend.instagram.oauth.InstagramOAuthStateStore;
 import com.viralground.backend.instagram.oauth.InstagramOAuthStateStore.IssuedState;
 import com.viralground.backend.repository.CreatorInstagramConnectionRepository;
@@ -24,8 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Locale;
 
 /** Meta OAuth와 로컬 연결 상태를 조정한다. authorization code와 access token은 로그에 남기지 않는다. */
@@ -37,29 +33,32 @@ public class InstagramConnectionService {
     private final CreatorInstagramConnectionRepository repository;
     private final CreatorProfileRepository creatorProfileRepository;
     private final InstagramConnectionProvider provider;
-    private final InstagramTokenCipher tokenCipher;
     private final InstagramOAuthStateStore stateStore;
     private final InstagramConnectionFailureRecorder failureRecorder;
+    private final InstagramAuthorizationPersistenceCoordinator authorizationCoordinator;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final String providerName;
+
+    @Value("${features.instagram.enabled:false}")
+    private boolean instagramFeatureEnabled = false;
 
     public InstagramConnectionService(
             CreatorInstagramConnectionRepository repository,
             CreatorProfileRepository creatorProfileRepository,
             InstagramConnectionProvider provider,
-            InstagramTokenCipher tokenCipher,
             InstagramOAuthStateStore stateStore,
             InstagramConnectionFailureRecorder failureRecorder,
+            InstagramAuthorizationPersistenceCoordinator authorizationCoordinator,
             ApplicationEventPublisher eventPublisher,
             Clock clock,
             @Value("${instagram.provider}") String providerName) {
         this.repository = repository;
         this.creatorProfileRepository = creatorProfileRepository;
         this.provider = provider;
-        this.tokenCipher = tokenCipher;
         this.stateStore = stateStore;
         this.failureRecorder = failureRecorder;
+        this.authorizationCoordinator = authorizationCoordinator;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.providerName = providerName.toUpperCase(Locale.ROOT);
@@ -68,13 +67,14 @@ public class InstagramConnectionService {
     /** 인증된 크리에이터에게만 짧은 수명의 일회용 state가 포함된 OAuth URL을 발급한다. */
     @Transactional
     public InstagramAuthorizationResponse beginAuthorization(int creatorId) {
+        requireInstagramEnabled();
         String profileHandle = requiredProfileHandle(creatorId);
+        CreatorInstagramConnection connection = repository.findByCreatorIdForUpdate(creatorId)
+                .orElseGet(() -> CreatorInstagramConnection.builder()
+                        .creatorId(creatorId).provider(providerName).build());
         IssuedState state = stateStore.issue(creatorId);
-        CreatorInstagramConnection connection = findOrCreate(creatorId);
         connection.setProvider(providerName);
-        if (connection.getEncryptedAccessToken() == null) {
-            connection.setStatus(ConnectionStatus.PENDING);
-        }
+        connection.setStatus(ConnectionStatus.PENDING);
         connection.setLastError(null);
         repository.save(connection);
         log.info("event=instagram_oauth_started creatorId={} provider={}", creatorId, providerName);
@@ -84,15 +84,21 @@ public class InstagramConnectionService {
     }
 
     /** public callback에서 state를 먼저 일회성 소비한 뒤 server-side code exchange를 수행한다. */
-    @Transactional
     public void completeAuthorization(String state, String code) {
-        int creatorId = stateStore.claim(state);
+        requireInstagramEnabled();
+        InstagramOAuthStateStore.ClaimedState claimedState = stateStore.claim(state);
+        int creatorId = claimedState.creatorId();
         InstagramConnectionProvider.AuthorizationResult authorization = null;
         try {
             authorization = provider.exchangeAuthorizationCode(code);
-            applyVerifiedAuthorization(creatorId, authorization);
+            InstagramAuthorizationPersistenceCoordinator.ApplyOutcome outcome =
+                    authorizationCoordinator.apply(claimedState, authorization);
+            if (outcome != InstagramAuthorizationPersistenceCoordinator.ApplyOutcome.APPLIED) {
+                revokeRejectedAuthorization(creatorId, authorization, outcome);
+                throw rejection(outcome);
+            }
         } catch (InstagramIntegrationException e) {
-            failureRecorder.record(creatorId, e.getMessage());
+            failureRecorder.record(claimedState, e.getMessage());
             log.warn("event=instagram_oauth_failed creatorId={} code={}", creatorId, e.getCode());
             throw e;
         } catch (RuntimeException e) {
@@ -104,7 +110,8 @@ public class InstagramConnectionService {
                             creatorId, revokeFailure);
                 }
             }
-            failureRecorder.record(creatorId, "인스타그램 연결 중 오류가 발생했습니다. 다시 시도해 주세요.");
+            failureRecorder.record(claimedState,
+                    "인스타그램 연결 중 오류가 발생했습니다. 다시 시도해 주세요.");
             log.error("event=instagram_oauth_failed creatorId={} code=UNEXPECTED", creatorId, e);
             throw new InstagramIntegrationException("INSTAGRAM_CONNECT_FAILED",
                     "인스타그램 연결 중 오류가 발생했습니다. 다시 시도해 주세요.",
@@ -114,13 +121,16 @@ public class InstagramConnectionService {
 
     /** 사용자가 Meta 동의 화면을 취소해도 state를 소비해 replay를 막는다. */
     public void cancelAuthorization(String state) {
-        int creatorId = stateStore.claim(state);
-        failureRecorder.record(creatorId, "인스타그램 연결이 취소되었습니다.");
+        requireInstagramEnabled();
+        InstagramOAuthStateStore.ClaimedState claimedState = stateStore.claim(state);
+        int creatorId = claimedState.creatorId();
+        failureRecorder.record(claimedState, "인스타그램 연결이 취소되었습니다.");
         log.info("event=instagram_oauth_cancelled creatorId={}", creatorId);
     }
 
     @Transactional(readOnly = true)
     public InstagramConnectionResponse getConnection(int creatorId) {
+        requireInstagramEnabled();
         String handle = profileHandle(creatorId);
         return repository.findByCreatorId(creatorId)
                 .map(connection -> InstagramConnectionResponse.from(connection, handle))
@@ -130,79 +140,56 @@ public class InstagramConnectionService {
     /** Meta 권한 철회가 성공한 뒤에만 로컬 토큰과 식별자를 지운다. */
     @Transactional
     public void disconnect(int creatorId) {
-        repository.findByCreatorId(creatorId).ifPresent(connection -> {
-            provider.revoke(connection);
-            connection.setStatus(ConnectionStatus.DISCONNECTED);
-            connection.setProviderAccountId(null);
-            connection.setProviderUserId(null);
-            connection.setIgUsername(null);
-            connection.setEncryptedAccessToken(null);
-            connection.setAccessTokenExpiresAt(null);
-            connection.setTokenRefreshedAt(null);
-            connection.setConnectedAt(null);
-            connection.setLastError(null);
-            repository.save(connection);
-            eventPublisher.publishEvent(new AuditEvent(creatorId, "CREATOR",
-                    AuditAction.SOCIAL_ACCOUNT_DISCONNECTED, "instagramConnection",
-                    creatorId, "SUCCESS", null));
-            log.info("event=instagram_disconnected creatorId={} provider={}", creatorId, providerName);
-        });
-    }
-
-    @Transactional
-    protected void applyVerifiedAuthorization(
-            int creatorId, InstagramConnectionProvider.AuthorizationResult authorization) {
-        String profile = normalizeHandle(requiredProfileHandle(creatorId));
-        String connected = normalizeHandle(authorization.username());
-        if (connected == null || !profile.equals(connected)) {
-            try {
-                provider.revoke(authorization);
-            } catch (RuntimeException revokeFailure) {
-                log.error("event=instagram_mismatch_revoke_failed creatorId={}", creatorId, revokeFailure);
-            }
-            log.warn("event=instagram_account_mismatch creatorId={}", creatorId);
-            throw new InstagramIntegrationException("INSTAGRAM_ACCOUNT_MISMATCH",
-                    "프로필에 등록한 Instagram 계정으로 다시 연결해 주세요", HttpStatus.BAD_REQUEST);
-        }
-
-        if (repository.existsByProviderAccountIdAndCreatorIdNot(authorization.accountId(), creatorId)) {
-            try {
-                provider.revoke(authorization);
-            } catch (RuntimeException revokeFailure) {
-                log.error("event=instagram_duplicate_account_revoke_failed creatorId={}",
-                        creatorId, revokeFailure);
-            }
-            throw new InstagramIntegrationException("INSTAGRAM_ACCOUNT_ALREADY_LINKED",
-                    "이미 다른 ViralGround 계정에 연결된 Instagram 계정입니다", HttpStatus.CONFLICT);
-        }
-
-        CreatorInstagramConnection connection = findOrCreate(creatorId);
-        connection.setProvider(providerName);
-        connection.setProviderUserId(authorization.accountId());
-        connection.setProviderAccountId(authorization.accountId());
-        connection.setIgUsername(authorization.username());
-        connection.setEncryptedAccessToken(tokenCipher.encrypt(authorization.accessToken()));
-        connection.setAccessTokenExpiresAt(
-                LocalDateTime.ofInstant(authorization.expiresAt(), ZoneOffset.UTC));
-        connection.setTokenRefreshedAt(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
-        connection.setStatus(ConnectionStatus.CONNECTED);
-        connection.setConnectedAt(LocalDateTime.now(clock));
+        CreatorInstagramConnection connection = repository.findByCreatorIdForUpdate(creatorId)
+                .orElse(null);
+        stateStore.invalidateUnusedForCreator(creatorId);
+        if (connection == null) return;
+        provider.revoke(connection);
+        connection.setStatus(ConnectionStatus.DISCONNECTED);
+        connection.setProviderAccountId(null);
+        connection.setProviderUserId(null);
+        connection.setIgUsername(null);
+        connection.setEncryptedAccessToken(null);
+        connection.setAccessTokenExpiresAt(null);
+        connection.setTokenRefreshedAt(null);
+        connection.setConnectedAt(null);
         connection.setLastError(null);
         repository.save(connection);
-        eventPublisher.publishEvent(new InstagramConnectedEvent(creatorId));
         eventPublisher.publishEvent(new AuditEvent(creatorId, "CREATOR",
-                AuditAction.SOCIAL_ACCOUNT_CONNECTED, "instagramConnection",
-                creatorId, "SUCCESS", providerName));
-        log.info("event=instagram_connected creatorId={} provider={} tokenExpiresAt={}",
-                creatorId, providerName, authorization.expiresAt());
+                AuditAction.SOCIAL_ACCOUNT_DISCONNECTED, "instagramConnection",
+                creatorId, "SUCCESS", null));
+        log.info("event=instagram_disconnected creatorId={} provider={}", creatorId, providerName);
     }
 
-    private CreatorInstagramConnection findOrCreate(int creatorId) {
-        return repository.findByCreatorId(creatorId)
-                .orElseGet(() -> CreatorInstagramConnection.builder()
-                        .creatorId(creatorId)
-                        .provider(providerName)
-                        .build());
+    private void revokeRejectedAuthorization(
+            int creatorId,
+            InstagramConnectionProvider.AuthorizationResult authorization,
+            InstagramAuthorizationPersistenceCoordinator.ApplyOutcome outcome) {
+        try {
+            provider.revoke(authorization);
+        } catch (RuntimeException revokeFailure) {
+            log.error("event=instagram_rejected_authorization_revoke_failed creatorId={} outcome={}",
+                    creatorId, outcome, revokeFailure);
+        }
+    }
+
+    private static InstagramIntegrationException rejection(
+            InstagramAuthorizationPersistenceCoordinator.ApplyOutcome outcome) {
+        return switch (outcome) {
+            case SUPERSEDED -> new InstagramIntegrationException(
+                    "INSTAGRAM_AUTHORIZATION_SUPERSEDED",
+                    "더 최근의 연결 또는 연결 해제 요청이 있어 다시 시도해 주세요",
+                    HttpStatus.CONFLICT);
+            case ACCOUNT_MISMATCH -> new InstagramIntegrationException(
+                    "INSTAGRAM_ACCOUNT_MISMATCH",
+                    "프로필에 등록한 Instagram 계정으로 다시 연결해 주세요",
+                    HttpStatus.BAD_REQUEST);
+            case DUPLICATE_ACCOUNT -> new InstagramIntegrationException(
+                    "INSTAGRAM_ACCOUNT_ALREADY_LINKED",
+                    "이미 다른 ViralGround 계정에 연결된 Instagram 계정입니다",
+                    HttpStatus.CONFLICT);
+            case APPLIED -> throw new IllegalArgumentException("applied authorization is not rejected");
+        };
     }
 
     private String requiredProfileHandle(int creatorId) {
@@ -227,5 +214,12 @@ public class InstagramConnectionService {
         }
         String normalized = value.trim().replaceFirst("^@", "").toLowerCase(Locale.ROOT);
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private void requireInstagramEnabled() {
+        if (!instagramFeatureEnabled) {
+            throw new InstagramIntegrationException("INSTAGRAM_FEATURE_DISABLED",
+                    "Instagram 연동 기능이 활성화되지 않았습니다", HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 }

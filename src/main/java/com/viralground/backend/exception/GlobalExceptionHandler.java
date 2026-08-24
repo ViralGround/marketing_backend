@@ -10,6 +10,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.util.NoSuchElementException;
 import java.util.Map;
@@ -48,6 +49,18 @@ public class GlobalExceptionHandler {
                 .addKeyValue("errorType", e.getClass().getSimpleName())
                 .log("Invalid argument rejected");
         return ResponseEntity.badRequest().body(errorBody("입력값을 확인해주세요", "INVALID_ARGUMENT"));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> handleUnreadableMessage(
+            HttpMessageNotReadableException e) {
+        // Never log the parse message: it may include caller-supplied email/body/token data.
+        log.atDebug()
+                .addKeyValue("event", "unreadable_request_body")
+                .addKeyValue("errorType", e.getClass().getSimpleName())
+                .log("Unreadable request body rejected");
+        return ResponseEntity.badRequest()
+                .body(errorBody("입력값을 확인해주세요", "INVALID_ARGUMENT"));
     }
 
     @ExceptionHandler(NoSuchElementException.class)

@@ -1,5 +1,6 @@
 package com.viralground.backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.viralground.backend.dto.landing.CompanyPublicResponse;
 import com.viralground.backend.dto.landing.FeaturedCampaignResponse;
 import com.viralground.backend.entity.Campaign;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -129,6 +131,31 @@ class LandingServiceTest {
     }
 
     @Test
+    void getFeaturedCampaigns_결제기능이_꺼지면_보상금액을_공개하지_않는다() throws Exception {
+        when(campaignRepository.findFeaturedOpen(LocalDateTime.now(clock)))
+                .thenReturn(List.of(campaign(1, 10, 1)));
+        when(applicationRepository.countByCampaignIdIn(anyList())).thenReturn(List.of());
+        when(companyProfileRepository.findByMemberIdIn(anyList())).thenReturn(List.of());
+
+        FeaturedCampaignResponse response = service().getFeaturedCampaigns().get(0);
+
+        assertThat(response.rewardAmount()).isNull();
+        assertThat(new ObjectMapper().writeValueAsString(response)).doesNotContain("rewardAmount");
+    }
+
+    @Test
+    void getFeaturedCampaigns_결제기능이_켜진_경우에만_보상금액을_공개한다() {
+        when(campaignRepository.findFeaturedOpen(LocalDateTime.now(clock)))
+                .thenReturn(List.of(campaign(1, 10, 1)));
+        when(applicationRepository.countByCampaignIdIn(anyList())).thenReturn(List.of());
+        when(companyProfileRepository.findByMemberIdIn(anyList())).thenReturn(List.of());
+        LandingService service = service();
+        ReflectionTestUtils.setField(service, "paymentsEnabled", true);
+
+        assertThat(service.getFeaturedCampaigns().get(0).rewardAmount()).isEqualTo(50_000);
+    }
+
+    @Test
     void getFeaturedCampaigns_회사프로필_있으면_companyMemberId_없으면_null() {
         // given — createdById=10 은 회사 프로필 있음, 20 은 admin 생성으로 프로필 없음
         when(campaignRepository.findFeaturedOpen(LocalDateTime.now(clock)))
@@ -209,6 +236,22 @@ class LandingServiceTest {
         assertThat(result.logoUrl()).isEqualTo("https://signed/logo-10");
         assertThat(result.openCampaigns()).hasSize(1)
                 .extracting(CompanyPublicResponse.OpenCampaignItem::id).containsExactly(1);
+        assertThat(result.openCampaigns().get(0).rewardAmount()).isNull();
+    }
+
+    @Test
+    void getCompanyPublic_결제기능이_꺼지면_다른_공개캠페인도_보상금액을_직렬화하지_않는다() throws Exception {
+        when(memberRepository.findById(10)).thenReturn(java.util.Optional.of(Member.builder()
+                .id(10).email("company@example.test").password("hash").name("회사")
+                .role(Role.COMPANY).status(MemberStatus.APPROVED).emailVerified(true).build()));
+        when(companyProfileRepository.findByMemberId(10)).thenReturn(java.util.Optional.of(
+                CompanyProfile.builder().memberId(10).companyName("주식회사 텐").build()));
+        when(campaignRepository.findOpenByCreator(10, LocalDateTime.now(clock)))
+                .thenReturn(List.of(campaign(1, 10, null)));
+
+        CompanyPublicResponse response = service().getCompanyPublic(10);
+
+        assertThat(new ObjectMapper().writeValueAsString(response)).doesNotContain("rewardAmount");
     }
 
     @Test

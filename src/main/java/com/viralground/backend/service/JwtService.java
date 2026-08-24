@@ -42,6 +42,7 @@ public class JwtService {
                 // 역할은 Next edge routing의 UX 힌트로만 사용한다. API는 매 요청 DB 역할을 다시 확인한다.
                 .claim("role", member.getRole().name())
                 .claim("token_type", "access")
+                .claim("auth_version", normalizedAuthVersion(member))
                 .issuer(issuer)
                 .audience().add(audience).and()
                 .id(UUID.randomUUID().toString())
@@ -58,6 +59,7 @@ public class JwtService {
                 .subject(member.getId().toString())
                 .claim("token_type", "refresh")
                 .claim("family_id", familyId)
+                .claim("auth_version", normalizedAuthVersion(member))
                 .issuer(issuer)
                 .audience().add(audience).and()
                 .id(tokenId)
@@ -109,6 +111,16 @@ public class JwtService {
 
     public boolean isTokenType(Claims claims, String type) {
         return claims != null && type.equals(claims.get("token_type", String.class));
+    }
+
+    public boolean hasCurrentAuthVersion(Claims claims, Member member) {
+        if (claims == null || member == null) return false;
+        Number claim = claims.get("auth_version", Number.class);
+        return claim != null && claim.longValue() == normalizedAuthVersion(member);
+    }
+
+    private long normalizedAuthVersion(Member member) {
+        return member.getAuthVersion() == null ? 0L : member.getAuthVersion();
     }
 
     public record IssuedRefreshToken(String token, String tokenId, String familyId, Instant expiresAt) {}

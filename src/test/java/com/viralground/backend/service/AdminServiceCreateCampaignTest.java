@@ -8,11 +8,13 @@ import com.viralground.backend.repository.*;
 import com.viralground.backend.storage.FileStorage;
 import com.viralground.backend.payment.PaymentActor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +43,11 @@ class AdminServiceCreateCampaignTest {
 
     @InjectMocks
     AdminService adminService;
+
+    @BeforeEach
+    void enableUploads() {
+        ReflectionTestUtils.setField(adminService, "uploadsFeatureEnabled", true);
+    }
 
     private CampaignCreateRequest baseReq() {
         CampaignCreateRequest req = new CampaignCreateRequest();
@@ -87,6 +94,7 @@ class AdminServiceCreateCampaignTest {
 
     @Test
     void should_결제검증_경로를_통해서만_즉시오픈_when_immediatelyOpen_true() {
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", true);
         CampaignCreateRequest req = baseReq();
         req.setImmediatelyOpen(true);
         when(campaignRepository.save(any())).thenAnswer(inv -> {
@@ -101,6 +109,23 @@ class AdminServiceCreateCampaignTest {
         assertThat(saved.getEscrowStatus()).isEqualTo(com.viralground.backend.entity.EscrowStatus.PENDING_DEPOSIT);
         verify(escrowService).forceConfirmDeposit(
                 77, PaymentActor.admin(1), "관리자 캠페인 즉시 오픈", "deposit:campaign:77");
+        verify(escrowTransactionRepository, never()).save(any());
+    }
+
+    @Test
+    void should_create_open_nonfinancial_campaign_without_gateway_when_payments_disabled() {
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", false);
+        CampaignCreateRequest req = baseReq();
+        req.setImmediatelyOpen(true);
+        when(campaignRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Campaign saved = adminService.createCampaign(req, 1);
+
+        assertThat(saved.getStatus())
+                .isEqualTo(com.viralground.backend.entity.CampaignStatus.OPEN);
+        assertThat(saved.getEscrowStatus())
+                .isEqualTo(com.viralground.backend.entity.EscrowStatus.NONE);
+        verify(escrowService, never()).forceConfirmDeposit(any(), any(), any(), any());
         verify(escrowTransactionRepository, never()).save(any());
     }
 

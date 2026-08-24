@@ -7,6 +7,7 @@ import com.viralground.backend.repository.PaymentWebhookEventRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -26,6 +27,9 @@ public class PaymentWebhookIngressService {
     private final PaymentWebhookEventRepository repository;
     private final Map<String, PaymentWebhookVerifier> verifiers;
 
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
+
     public PaymentWebhookIngressService(PaymentWebhookEventRepository repository,
                                         List<PaymentWebhookVerifier> verifiers) {
         this.repository = repository;
@@ -34,6 +38,9 @@ public class PaymentWebhookIngressService {
     }
 
     public IngressResult accept(String provider, byte[] rawBody, Map<String, String> headers) {
+        if (!paymentsFeatureEnabled) {
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
         String normalizedProvider = normalizeProvider(provider);
         PaymentWebhookVerifier verifier = verifiers.get(normalizedProvider);
         if (verifier == null) {

@@ -14,6 +14,7 @@ import com.viralground.backend.service.PasswordResetService;
 import com.viralground.backend.service.RateLimitService;
 import com.viralground.backend.service.AuthCookieService;
 import com.viralground.backend.config.AuthUser;
+import com.viralground.backend.config.StagingAccountProvisioningPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Cookie;
@@ -39,11 +40,13 @@ public class AuthController {
     private final PasswordResetService passwordResetService;
     private final RateLimitService rateLimitService;
     private final AuthCookieService authCookieService;
+    private final StagingAccountProvisioningPolicy stagingAccountProvisioningPolicy;
 
     @PostMapping("/email/request-code")
     public ResponseEntity<Map<String, Object>> requestEmailCode(
             @Valid @RequestBody EmailCodeRequest req,
             HttpServletRequest httpRequest) {
+        stagingAccountProvisioningPolicy.requireAllowedEmail(req.getEmail());
         rateLimitService.consumeRequestCodeByIp(clientIp(httpRequest));
         rateLimitService.consumeRequestCodeByEmail(normalizeEmail(req.getEmail()));
         LocalDateTime expiresAt = emailVerificationService.requestCode(req.getEmail());
@@ -57,7 +60,9 @@ public class AuthController {
     public ResponseEntity<Map<String, String>> verifyEmailCode(
             @Valid @RequestBody EmailCodeVerifyRequest req,
             HttpServletRequest httpRequest) {
+        stagingAccountProvisioningPolicy.requireAllowedEmail(req.getEmail());
         rateLimitService.consumeVerifyCodeByIp(clientIp(httpRequest));
+        rateLimitService.consumeVerifyCodeByEmail(normalizeEmail(req.getEmail()));
         String verifiedToken = emailVerificationService.verifyCode(req.getEmail(), req.getCode());
         return ResponseEntity.ok(Map.of(
                 "message", "이메일 인증이 완료되었습니다",
@@ -73,6 +78,10 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> requestPasswordResetCode(
             @Valid @RequestBody PasswordResetCodeRequest req,
             HttpServletRequest httpRequest) {
+        // The provisioning allowlist depends only on the submitted identity,
+        // not on whether a member row exists. Apply it before any account
+        // lookup so allowlist delivery failures cannot become an oracle.
+        stagingAccountProvisioningPolicy.requireAllowedEmail(req.getEmail());
         rateLimitService.consumePasswordResetRequestByIp(clientIp(httpRequest));
         rateLimitService.consumePasswordResetRequestByEmail(normalizeEmail(req.getEmail()));
         LocalDateTime expiresAt = passwordResetService.requestCode(req.getEmail());
@@ -87,6 +96,7 @@ public class AuthController {
             @Valid @RequestBody PasswordResetConfirmRequest req,
             HttpServletRequest httpRequest) {
         rateLimitService.consumePasswordResetConfirmByIp(clientIp(httpRequest));
+        rateLimitService.consumePasswordResetConfirmByEmail(normalizeEmail(req.getEmail()));
         passwordResetService.reset(req.getEmail(), req.getCode(), req.getNewPassword());
         return ResponseEntity.ok(Map.of(
                 "message", "비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요."
@@ -94,14 +104,24 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<Map<String, String>> signup(@Valid @RequestBody SignupRequest req) {
+    public ResponseEntity<Map<String, String>> signup(
+            @Valid @RequestBody SignupRequest req,
+            HttpServletRequest httpRequest) {
+        stagingAccountProvisioningPolicy.requireAllowedEmail(req.getEmail());
+        rateLimitService.consumeSignupByIp(clientIp(httpRequest));
+        rateLimitService.consumeSignupByEmail(normalizeEmail(req.getEmail()));
         authService.signup(req);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("message", "가입 신청이 완료되었습니다. 이메일을 확인해주세요."));
     }
 
     @PostMapping("/signup/company")
-    public ResponseEntity<Map<String, String>> signupCompany(@Valid @RequestBody CompanySignupRequest req) {
+    public ResponseEntity<Map<String, String>> signupCompany(
+            @Valid @RequestBody CompanySignupRequest req,
+            HttpServletRequest httpRequest) {
+        stagingAccountProvisioningPolicy.requireAllowedEmail(req.getEmail());
+        rateLimitService.consumeSignupByIp(clientIp(httpRequest));
+        rateLimitService.consumeSignupByEmail(normalizeEmail(req.getEmail()));
         authService.signupCompany(req);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("message", "가입이 완료되었습니다. 이메일 인증 후 로그인해주세요."));
@@ -112,7 +132,9 @@ public class AuthController {
             @Valid @RequestBody LoginRequest req,
             HttpServletRequest httpRequest,
             HttpServletResponse response) {
+        stagingAccountProvisioningPolicy.requireAllowedEmail(req.getEmail());
         rateLimitService.consumeLoginByIp(clientIp(httpRequest));
+        rateLimitService.consumeLoginByEmail(normalizeEmail(req.getEmail()));
         TokenResponse tokens = authService.login(req);
         authCookieService.write(response, tokens);
         return ResponseEntity.ok(Map.of("message", "로그인되었습니다."));
@@ -120,10 +142,12 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ResponseEntity<Void> refresh(HttpServletRequest request, HttpServletResponse response) {
+        rateLimitService.consumeRefreshByIp(clientIp(request));
         String refreshToken = cookieValue(request, "refresh_token");
         if (refreshToken == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        rateLimitService.consumeRefreshByToken(refreshToken);
         TokenResponse tokens = authService.refresh(refreshToken);
         authCookieService.write(response, tokens);
         return ResponseEntity.noContent().build();

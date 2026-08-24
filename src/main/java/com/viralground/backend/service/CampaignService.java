@@ -9,15 +9,18 @@ import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.*;
 import com.viralground.backend.storage.FileStorage;
 import com.viralground.backend.storage.UploadOwnershipService;
+import com.viralground.backend.validation.PublicUrlPolicy;
 
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -40,6 +43,12 @@ public class CampaignService {
     private final FileStorage fileStorage;
     private final Clock clock;
     private final UploadOwnershipService uploadOwnershipService;
+
+    @Value("${features.uploads.enabled:false}")
+    private boolean uploadsFeatureEnabled = false;
+
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
 
     /** 캠페인 마감 여부. deadline 이 null 이면 "마감 미정" 으로 보고 항상 활성으로 간주. */
     private boolean isPastDeadline(Campaign c) {
@@ -64,13 +73,16 @@ public class CampaignService {
                         CampaignApplicationRepository.CampaignCountRow::getCampaignId,
                         CampaignApplicationRepository.CampaignCountRow::getCount));
 
+        Comparator<Campaign> recentComparator = Comparator.comparing(
+                Campaign::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
         Comparator<Campaign> comparator = switch (sort != null ? sort : "recent") {
-            case "reward" -> Comparator.comparing(
-                    Campaign::getRewardAmount, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
+            case "reward" -> paymentsFeatureEnabled
+                    ? Comparator.comparing(Campaign::getRewardAmount,
+                            Comparator.nullsLast(Comparator.naturalOrder())).reversed()
+                    : recentComparator;
             case "deadline" -> Comparator.comparing(
                     c -> c.getDeadline() != null ? c.getDeadline() : LocalDateTime.MAX);
-            default -> Comparator.comparing(
-                    Campaign::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
+            default -> recentComparator;
         };
 
         return campaigns.stream()
@@ -79,7 +91,8 @@ public class CampaignService {
                         c,
                         myApps.get(c.getId()),
                         countByCampaignId.getOrDefault(c.getId(), 0L).intValue(),
-                        resolveThumbUrl(c)))
+                        resolveThumbUrl(c),
+                        paymentsFeatureEnabled))
                 .toList();
     }
 
@@ -103,7 +116,7 @@ public class CampaignService {
                 ? applicationRepository.findByCampaignIdAndCreatorId(id, creatorId).orElse(null)
                 : null;
         int count = (int) applicationRepository.countByCampaignId(id);
-        return new CampaignResponse(campaign, myApp, count, resolveThumbUrl(campaign));
+        return new CampaignResponse(campaign, myApp, count, resolveThumbUrl(campaign), paymentsFeatureEnabled);
     }
 
     @Transactional
@@ -122,7 +135,11 @@ public class CampaignService {
         if (target.getStatus() != CampaignStatus.OPEN) {
             throw new AppException(ErrorCode.CAMPAIGN_CLOSED);
         }
-        if (target.getEscrowStatus() != EscrowStatus.FUNDED) {
+        boolean financiallyEligible = paymentsFeatureEnabled
+                && target.getEscrowStatus() == EscrowStatus.FUNDED;
+        boolean managedBetaEligible = !paymentsFeatureEnabled
+                && target.getEscrowStatus() == EscrowStatus.NONE;
+        if (!financiallyEligible && !managedBetaEligible) {
             throw new AppException(ErrorCode.CAMPAIGN_NOT_FUNDED);
         }
         if (isPastDeadline(target)) {
@@ -150,12 +167,18 @@ public class CampaignService {
     }
 
     public List<ApplicationResponse> getMyApplications(Integer creatorId, String statusStr) {
+        if ("COMPLETED".equals(statusStr)) {
+            return applicationRepository.findByCreatorIdOrderByAppliedAtDesc(creatorId).stream()
+                    .filter(CampaignApplication::isCompletedWork)
+                    .map(a -> new ApplicationResponse(a, paymentsFeatureEnabled))
+                    .toList();
+        }
         ApplicationStatus status = null;
         if (statusStr != null && !"ALL".equals(statusStr)) {
             status = ApplicationStatus.valueOf(statusStr);
         }
         return applicationRepository.findByCreatorIdAndStatus(creatorId, status).stream()
-                .map(ApplicationResponse::new)
+                .map(a -> new ApplicationResponse(a, paymentsFeatureEnabled))
                 .toList();
     }
 
@@ -177,6 +200,9 @@ public class CampaignService {
         if (!SUBMITTABLE.contains(app.getStatus())) {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
+        if (app.getContentApprovedAt() != null) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
 
         boolean hasFile = request != null && request.videoFileKey() != null && !request.videoFileKey().isBlank();
         boolean hasUrl = request != null && request.submissionUrl() != null && !request.submissionUrl().isBlank();
@@ -184,7 +210,17 @@ public class CampaignService {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
 
+        String normalizedSubmissionUrl = null;
+        if (hasUrl) {
+            try {
+                normalizedSubmissionUrl = PublicUrlPolicy.normalizeRequired(request.submissionUrl());
+            } catch (AppException invalidPublicUrl) {
+                throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+            }
+        }
+
         if (hasFile) {
+            requireUploadsEnabled();
             if (request.videoContentType() == null || request.videoContentType().isBlank()) {
                 throw new AppException(ErrorCode.INVALID_VIDEO_FORMAT);
             }
@@ -202,7 +238,7 @@ public class CampaignService {
             app.setVideoSizeBytes(request.videoSizeBytes());
             app.setSubmissionUrl(null);
         } else {
-            app.setSubmissionUrl(request.submissionUrl());
+            app.setSubmissionUrl(normalizedSubmissionUrl);
             app.setVideoFileKey(null);
             app.setVideoContentType(null);
             app.setVideoSizeBytes(null);
@@ -240,22 +276,28 @@ public class CampaignService {
         return connected ? "AUTO" : "MANUAL";
     }
 
+    private void requireUploadsEnabled() {
+        if (!uploadsFeatureEnabled) throw new AppException(ErrorCode.UPLOAD_FEATURE_DISABLED);
+    }
+
     public Map<String, Object> getStats(Integer creatorId) {
-        long totalEarned = applicationRepository.sumRewardByCreatorId(creatorId);
-        long completed = applicationRepository.countByCreatorIdAndStatus(creatorId, ApplicationStatus.SETTLED);
+        long totalEarned = paymentsFeatureEnabled
+                ? applicationRepository.sumRewardByCreatorId(creatorId)
+                : 0L;
+        long completed = applicationRepository.countCompletedByCreatorId(creatorId);
         long active = applicationRepository.countByCreatorIdAndStatus(creatorId, ApplicationStatus.APPROVED)
                 + applicationRepository.countByCreatorIdAndStatus(creatorId, ApplicationStatus.SUBMITTED);
         List<ApplicationResponse> recent = applicationRepository
                 .findByCreatorIdOrderByAppliedAtDesc(creatorId).stream()
                 .limit(5)
-                .map(ApplicationResponse::new)
+                .map(a -> new ApplicationResponse(a, paymentsFeatureEnabled))
                 .toList();
 
-        return Map.of(
-                "totalEarned", totalEarned,
-                "completedCount", completed,
-                "activeCount", active,
-                "recentApplications", recent
-        );
+        Map<String, Object> stats = new LinkedHashMap<>();
+        if (paymentsFeatureEnabled) stats.put("totalEarned", totalEarned);
+        stats.put("completedCount", completed);
+        stats.put("activeCount", active);
+        stats.put("recentApplications", recent);
+        return stats;
     }
 }

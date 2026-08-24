@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Offline CI fixture only. It simulates the two read-only sentinel queries used by
+# assert-sanitized-e2e-before-attestation.sh. Never place it on PATH outside that test.
+sql="$(cat)"
+if grep -Fq "missing-or-expired-sentinel" <<<"${sql}"; then
+  printf 'ok\n'
+elif grep -Fq "before-attestation-not-recorded" <<<"${sql}"; then
+  printf 'ready\n'
+else
+  exit 98
+fi

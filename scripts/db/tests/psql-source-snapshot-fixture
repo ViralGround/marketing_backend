@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+sql="$(cat)"
+grep -Fq "source_snapshot_id = :'source_snapshot_id'" <<<"$sql" || exit 98
+provided=""
+for argument in "$@"; do
+  case "$argument" in
+    --set=source_snapshot_id=*) provided="${argument#--set=source_snapshot_id=}" ;;
+  esac
+done
+if [[ "$provided" == "${EXPECTED_SOURCE_SNAPSHOT_ID:-}" ]]; then
+  printf 'ok\n'
+else
+  printf 'missing-or-expired-sentinel\n'
+fi

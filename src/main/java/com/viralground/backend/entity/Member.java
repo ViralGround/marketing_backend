@@ -59,9 +59,22 @@ public class Member {
     @Column(name = "withdrawn_at")
     private Instant withdrawnAt;
 
+    /**
+     * 인증 세대. 비밀번호 재설정·탈퇴처럼 기존 세션을 즉시 폐기해야 하는 작업에서
+     * 증가시키며 access/refresh JWT의 auth_version claim과 매 요청 비교한다.
+     */
+    @Column(name = "auth_version", nullable = false)
+    @Builder.Default
+    private Long authVersion = 0L;
+
+    public void incrementAuthVersion() {
+        this.authVersion = (this.authVersion == null ? 0L : this.authVersion) + 1L;
+    }
+
     public void withdraw(Instant at) {
         this.status = MemberStatus.WITHDRAWN;
         this.withdrawnAt = java.util.Objects.requireNonNull(at, "at");
+        incrementAuthVersion();
     }
 
     @Column(name = "created_at", nullable = false, updatable = false)

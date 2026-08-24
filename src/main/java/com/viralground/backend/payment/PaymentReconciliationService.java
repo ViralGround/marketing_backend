@@ -6,6 +6,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
+import com.viralground.backend.exception.AppException;
+import com.viralground.backend.exception.ErrorCode;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -25,8 +28,14 @@ public class PaymentReconciliationService {
     private final EscrowTransactionRepository transactionRepository;
     private final PaymentGateway paymentGateway;
 
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
+
     @Transactional(readOnly = true)
     public ReconciliationReport reconcile(LocalDateTime fromInclusive, LocalDateTime toExclusive) {
+        if (!paymentsFeatureEnabled) {
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
         if (fromInclusive == null || toExclusive == null || !fromInclusive.isBefore(toExclusive)) {
             throw new IllegalArgumentException("유효한 대사 기간이 필요합니다");
         }

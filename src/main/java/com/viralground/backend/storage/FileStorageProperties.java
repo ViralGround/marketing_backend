@@ -56,6 +56,13 @@ public class FileStorageProperties {
 
         private String bucket = "";
 
+        /**
+         * 보호 환경에서만 사용하는 exact bucket allowlist. 두 목록은 서로 겹치면 안 되며,
+         * 상대 환경 목록은 운영/staging bucket 공유를 막는 denylist 역할도 한다.
+         */
+        private List<String> stagingAllowedBuckets = List.of();
+        private List<String> productionAllowedBuckets = List.of();
+
         /** static | default-chain (IRSA/ECS/EC2 환경 권장). */
         private String credentialsMode = "static";
 

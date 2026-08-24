@@ -22,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -36,10 +37,14 @@ public class FileController {
     private final UploadOwnershipService uploadOwnershipService;
     private final AuditService auditService;
 
+    @Value("${features.uploads.enabled:false}")
+    private boolean uploadsFeatureEnabled = false;
+
     @PostMapping("/presign-upload")
     public ResponseEntity<PresignedUpload> presignUpload(
             @Valid @RequestBody PresignUploadRequest request,
             @AuthenticationPrincipal AuthUser authUser) {
+        requireUploadsEnabled();
         if (authUser == null || authUser.getRole() != Role.CREATOR) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
@@ -54,6 +59,7 @@ public class FileController {
     public ResponseEntity<PresignedUpload> presignImageUpload(
             @Valid @RequestBody PresignUploadRequest request,
             @AuthenticationPrincipal AuthUser authUser) {
+        requireUploadsEnabled();
         if (authUser == null
                 || (authUser.getRole() != Role.COMPANY && authUser.getRole() != Role.ADMIN)) {
             throw new AppException(ErrorCode.FORBIDDEN);
@@ -73,6 +79,7 @@ public class FileController {
     public ResponseEntity<UploadCompletionResponse> completeUpload(
             @Valid @RequestBody CompleteUploadRequest request,
             @AuthenticationPrincipal AuthUser authUser) {
+        requireUploadsEnabled();
         if (authUser == null) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
@@ -90,6 +97,7 @@ public class FileController {
             @RequestParam long exp,
             @RequestHeader("Content-Type") String contentType,
             HttpServletRequest request) throws IOException {
+        requireUploadsEnabled();
         LocalFileStorage local = requireLocal();
         String key = stripLeadingSlash(fileKey);
         boolean isImage = key != null && key.startsWith("thumbnails/");
@@ -121,6 +129,10 @@ public class FileController {
 
     private LocalFileStorage requireLocal() {
         return localFileStorage.orElseThrow(() -> new AppException(ErrorCode.SUBMISSION_NOT_FOUND));
+    }
+
+    private void requireUploadsEnabled() {
+        if (!uploadsFeatureEnabled) throw new AppException(ErrorCode.UPLOAD_FEATURE_DISABLED);
     }
 
     private static String stripLeadingSlash(String v) {

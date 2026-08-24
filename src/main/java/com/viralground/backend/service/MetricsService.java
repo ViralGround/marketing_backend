@@ -8,6 +8,7 @@ import com.viralground.backend.exception.AppException;
 import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.repository.CampaignApplicationRepository;
 import com.viralground.backend.repository.SubmissionMetricRepository;
+import com.viralground.backend.validation.PublicUrlPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -23,8 +24,8 @@ public class MetricsService {
     private final CampaignApplicationRepository applicationRepository;
 
     /**
-     * 본인이 지원한 SETTLED application 에만 성과를 upsert.
-     * 외부 SNS 게시물 URL 은 선택값이며 http/https 만 허용.
+     * 본인이 완료한 COMPLETED/SETTLED application 에만 성과를 upsert.
+     * 외부 SNS 게시물 URL 은 선택값이며 공개 absolute HTTPS 주소만 허용.
      */
     @Transactional
     public SubmissionMetric upsert(Integer applicationId, Integer creatorId, UpsertMetricRequest req) {
@@ -33,41 +34,35 @@ public class MetricsService {
         if (!app.getCreatorId().equals(creatorId)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
-        if (app.getStatus() != ApplicationStatus.SETTLED) {
+        if (!app.isCompletedWork()) {
             throw new AppException(ErrorCode.METRIC_FORBIDDEN);
         }
-        if (req.getExternalUrl() != null && !req.getExternalUrl().isBlank()
-                && !isSafeHttpUrl(req.getExternalUrl())) {
+        String normalizedExternalUrl;
+        try {
+            normalizedExternalUrl = PublicUrlPolicy.normalizeOptional(req.getExternalUrl());
+        } catch (AppException invalidPublicUrl) {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
 
         try {
-            return saveMetric(applicationId, req);
+            return saveMetric(applicationId, req, normalizedExternalUrl);
         } catch (DataIntegrityViolationException e) {
             // 동시 요청이 먼저 row 를 만든 경우: 재시도 시에는 find 가 기존 row 를 반환하므로
             // update 경로로 들어간다. 두 번째 시도에서도 실패하면 상위로 전파.
-            return saveMetric(applicationId, req);
+            return saveMetric(applicationId, req, normalizedExternalUrl);
         }
     }
 
-    private SubmissionMetric saveMetric(Integer applicationId, UpsertMetricRequest req) {
+    private SubmissionMetric saveMetric(Integer applicationId, UpsertMetricRequest req,
+                                        String normalizedExternalUrl) {
         SubmissionMetric metric = metricRepository.findByApplicationId(applicationId)
                 .orElseGet(() -> SubmissionMetric.builder().applicationId(applicationId).build());
         metric.setViews(req.getViews());
         metric.setLikes(req.getLikes());
         metric.setComments(req.getComments());
-        metric.setExternalUrl(req.getExternalUrl());
+        metric.setExternalUrl(normalizedExternalUrl);
         metric.setRecordedAt(LocalDateTime.now());
         return metricRepository.saveAndFlush(metric);
     }
 
-    private static boolean isSafeHttpUrl(String raw) {
-        try {
-            java.net.URI u = java.net.URI.create(raw);
-            String scheme = u.getScheme();
-            return "http".equals(scheme) || "https".equals(scheme);
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
-    }
 }

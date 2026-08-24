@@ -15,6 +15,8 @@ public interface InstagramOAuthStateRepository extends JpaRepository<InstagramOA
     @Query("select s from InstagramOAuthState s where s.stateHash = :stateHash")
     Optional<InstagramOAuthState> findByStateHashForUpdate(String stateHash);
 
+    Optional<InstagramOAuthState> findTopByCreatorIdOrderByIdDesc(Integer creatorId);
+
     @Modifying
     @Query("update InstagramOAuthState s set s.usedAt = :now "
             + "where s.creatorId = :creatorId and s.usedAt is null")

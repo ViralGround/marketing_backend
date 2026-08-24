@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Offline CI fixture only. It simulates the read-only queries and the one narrow
+# sentinel CAS used by sanitized-e2e-evidence.sh. Never place it on PATH outside
+# scripts/db/tests/sanitized-e2e-safety-fixture.sh.
+sql="$(cat)"
+mode="${SANITIZED_E2E_FIXTURE_MODE:-success}"
+
+if grep -Fq "missing-or-expired-sentinel" <<<"${sql}"; then
+  printf 'ok\n'
+elif grep -Fq "baseline-not-started" <<<"${sql}"; then
+  printf 'ready\n'
+elif grep -Fq "already-attested" <<<"${sql}"; then
+  printf 'available\n'
+elif grep -Fq "SELECT relation.relname, relation.relkind" <<<"${sql}"; then
+  [[ -f "${PUBLIC_SCHEMA_ALLOWLIST_FIXTURE_FILE:-}" ]] || exit 96
+  cut -f1 "${PUBLIC_SCHEMA_ALLOWLIST_FIXTURE_FILE}" | LC_ALL=C sort -u |
+    awk '{ print $0 "\tr" }'
+elif grep -Fq "SELECT relation.relname" <<<"${sql}" \
+    && ! grep -Fq "JOIN pg_attribute attribute" <<<"${sql}"; then
+  [[ -f "${PUBLIC_SCHEMA_ALLOWLIST_FIXTURE_FILE:-}" ]] || exit 96
+  cut -f1 "${PUBLIC_SCHEMA_ALLOWLIST_FIXTURE_FILE}" | LC_ALL=C sort -u
+elif grep -Fq "FROM pg_class relation" <<<"${sql}" \
+    && grep -Fq "JOIN pg_attribute attribute" <<<"${sql}"; then
+  [[ -f "${PUBLIC_SCHEMA_ALLOWLIST_FIXTURE_FILE:-}" ]] || exit 96
+  cat "${PUBLIC_SCHEMA_ALLOWLIST_FIXTURE_FILE}"
+elif grep -Fq "unexpected_non_system_schema" <<<"${sql}"; then
+  printf '%s\n' \
+    $'foreign_data_wrapper\t0' \
+    $'foreign_server\t0' \
+    $'foreign_user_mapping\t0' \
+    $'missing_latest_user_routine\t0' \
+    $'missing_or_disabled_latest_user_trigger\t0' \
+    $'nonlocal_public_application_relation\t0' \
+    $'unexpected_non_system_schema\t0' \
+    $'unexpected_public_user_routine\t0' \
+    $'unexpected_public_user_trigger\t0'
+elif grep -Fq "duplicate_member_allowlist_id" <<<"${sql}"; then
+  checks=(
+    bootstrap_admin_count_not_one
+    company_without_single_profile
+    contact_without_post_sentinel_public_api_audit
+    creator_without_single_profile
+    duplicate_contact_allowlist_id
+    duplicate_member_allowlist_id
+    invalid_bootstrap_admin_provenance
+    live_sentinel_count_not_one
+    missing_contact_allowlist_row
+    missing_member_allowlist_row
+    public_member_missing_post_sentinel_consent
+    public_member_without_post_sentinel_signup_audit
+    source_sanitized_contact_marker
+    source_sanitized_member_marker
+    unsupported_member_role
+  )
+  for check in "${checks[@]}"; do
+    value=0
+    if [[ "$mode" == "provenance" && "$check" == "missing_member_allowlist_row" ]]; then
+      value=1
+    fi
+    printf '%s\t%s\n' "$check" "$value"
+  done
+elif grep -Fq "mixed_campaign_application_members" <<<"${sql}"; then
+  printf 'mixed_campaign_application_members\t0\n'
+  printf 'mixed_review_members\t0\n'
+elif grep -Fq "SELECT 'members' AS table_name" <<<"${sql}"; then
+  printf 'members\t0\td41d8cd98f00b204e9800998ecf8427e\n'
+elif grep -Fq "application_column_privilege" <<<"${sql}"; then
+  checks=(
+    application_column_privilege
+    application_sequence_privilege
+    application_table_privilege
+    database_create_or_temp_privilege
+    executable_security_definer_path
+    guard_schema_create_privilege
+    missing_guard_schema_usage
+    missing_required_sentinel_column_update
+    missing_sentinel_select
+    non_guard_schema_create_privilege
+    role_has_elevated_attributes
+    set_role_membership
+    unexpected_guard_table_privilege
+    unexpected_sentinel_column_update
+    wrong_current_user
+    wrong_session_user
+  )
+  for check in "${checks[@]}"; do
+    value=0
+    case "$mode:$check" in
+      table:application_table_privilege|\
+      column:application_column_privilege|\
+      sequence:application_sequence_privilege|\
+      security-definer:executable_security_definer_path) value=1 ;;
+    esac
+    printf '%s\t%s\n' "$check" "$value"
+  done
+elif grep -Fq "UPDATE preprod_guard.clone_sentinel" <<<"${sql}"; then
+  before_seal=""
+  for argument in "$@"; do
+    case "$argument" in
+      --set=before_seal_sha256=*)
+        before_seal="${argument#--set=before_seal_sha256=}"
+        ;;
+    esac
+  done
+  if [[ ! "$before_seal" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'fixture did not receive the before-seal psql variable\n' >&2
+    printf 'arg=%q\n' "$@" >&2
+    exit 97
+  fi
+  printf '%s\n' "$before_seal"
+else
+  printf 'unexpected sanitized E2E fixture query\n' >&2
+  exit 98
+fi

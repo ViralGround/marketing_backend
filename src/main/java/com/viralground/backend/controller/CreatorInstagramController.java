@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
 
@@ -24,10 +25,14 @@ public class CreatorInstagramController {
 
     private final InstagramConnectionService connectionService;
 
+    @Value("${features.instagram.enabled:false}")
+    private boolean instagramFeatureEnabled = false;
+
     /** Meta 동의 화면 URL을 발급한다. 브라우저는 응답 URL로 이동하면 된다. */
     @PostMapping("/authorize")
     public ResponseEntity<InstagramAuthorizationResponse> authorize(
             @AuthenticationPrincipal AuthUser authUser) {
+        requireFeatureEnabled();
         requireCreator(authUser);
         return ResponseEntity.ok(connectionService.beginAuthorization(authUser.getId()));
     }
@@ -35,6 +40,7 @@ public class CreatorInstagramController {
     /** 현재 연동 상태 조회. */
     @GetMapping("/connection")
     public ResponseEntity<InstagramConnectionResponse> connection(@AuthenticationPrincipal AuthUser authUser) {
+        requireFeatureEnabled();
         requireCreator(authUser);
         return ResponseEntity.ok(connectionService.getConnection(authUser.getId()));
     }
@@ -58,6 +64,14 @@ public class CreatorInstagramController {
             throw new InstagramIntegrationException("INSTAGRAM_CREATOR_ONLY",
                     "크리에이터 계정만 Instagram을 연결할 수 있습니다",
                     org.springframework.http.HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private void requireFeatureEnabled() {
+        if (!instagramFeatureEnabled) {
+            throw new InstagramIntegrationException("INSTAGRAM_FEATURE_DISABLED",
+                    "Instagram 연동 기능이 활성화되지 않았습니다",
+                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 }

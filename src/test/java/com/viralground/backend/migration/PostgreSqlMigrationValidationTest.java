@@ -40,7 +40,7 @@ class PostgreSqlMigrationValidationTest {
             Pattern.compile("^V([0-9][0-9._]*)__.+\\.sql$");
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16.4-alpine")
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c")
             .withDatabaseName("viralground_migration_test")
             .withUsername("viralground_test")
             .withPassword("viralground_test_password");
@@ -116,10 +116,10 @@ class PostgreSqlMigrationValidationTest {
                         'refresh_tokens', 'upload_records', 'payment_ledger_entries',
                         'payment_webhook_events', 'instagram_oauth_states',
                         'instagram_webhook_deliveries', 'member_consent_evidence',
-                        'marketing_consent_events'
+                        'marketing_consent_events', 'notification_outbox'
                       )
                     """, Integer.class);
-            assertThat(mappedTableCount).isEqualTo(22);
+            assertThat(mappedTableCount).isEqualTo(23);
 
             assertConsentEvidenceIsMinimalAndAppendOnly(jdbc);
             assertAuditLogIsAppendOnly(jdbc);
@@ -129,7 +129,30 @@ class PostgreSqlMigrationValidationTest {
             assertCampaignBudgetConstraints(jdbc);
             assertMarketingConsentEvidenceIsAppendOnly(jdbc);
             assertCompanyHomepageConstraint(jdbc);
+            assertNonfinancialCompletionMarkerSchema(jdbc);
         }
+    }
+
+    private void assertNonfinancialCompletionMarkerSchema(JdbcTemplate jdbc) {
+        Integer columnCount = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'campaign_applications'
+                  AND column_name = 'content_approved_at'
+                  AND is_nullable = 'YES'
+                """, Integer.class);
+        assertThat(columnCount).isOne();
+
+        String definition = jdbc.queryForObject("""
+                SELECT pg_get_constraintdef(oid)
+                FROM pg_constraint
+                WHERE conrelid = 'campaign_applications'::regclass
+                  AND conname = 'ck_nonfinancial_completion'
+                """, String.class);
+        assertThat(definition)
+                .contains("content_approved_at", "SETTLED", "reward_paid_amount", "settled_at")
+                .doesNotContain("COMPLETED");
     }
 
     private void assertCompanyHomepageConstraint(JdbcTemplate jdbc) {

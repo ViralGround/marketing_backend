@@ -78,6 +78,9 @@ class PortfolioServiceTest {
         assertThat(summary).containsEntry("metricSampleSize", 2L);
         // 5000 / 2 = 2500
         assertThat(summary).containsEntry("averageViews", 2500L);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) portfolio.get("items");
+        assertThat(items).allSatisfy(item -> assertThat(item).doesNotContainKey("rewardPaidAmount"));
     }
 
     @Test

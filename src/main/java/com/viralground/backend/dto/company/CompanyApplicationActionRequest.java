@@ -13,6 +13,7 @@ public class CompanyApplicationActionRequest {
         APPROVE,             // 지원 승인 (PENDING → APPROVED)
         REJECT,              // 지원 거절 (PENDING → REJECTED)
         APPROVE_VIDEO,       // 영상 승인 + 정산 (SUBMITTED → SETTLED, 에스크로 release)
+        APPROVE_CONTENT,     // 관리형 베타 콘텐츠 승인 (SUBMITTED → COMPLETED, 금전 처리 없음)
         REQUEST_CHANGES,     // 수정 요청 (SUBMITTED → CHANGES_REQUESTED, reviewComment 필수)
         REJECT_VIDEO         // 영상 최종 거절 (SUBMITTED → REJECTED)
     }

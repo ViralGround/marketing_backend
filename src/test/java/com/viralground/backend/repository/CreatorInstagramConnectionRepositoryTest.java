@@ -83,4 +83,30 @@ class CreatorInstagramConnectionRepositoryTest {
                 .extracting(CreatorInstagramConnection::getCreatorId)
                 .containsExactlyInAnyOrder(1, 2);
     }
+
+    @Test
+    void conditionalSyncUpdateCannotResurrectDisconnectedTokenRow() {
+        CreatorInstagramConnection connection = repository.saveAndFlush(
+                CreatorInstagramConnection.builder()
+                        .creatorId(91)
+                        .provider("META")
+                        .status(ConnectionStatus.CONNECTED)
+                        .encryptedAccessToken("ciphertext")
+                        .build());
+        connection.setStatus(ConnectionStatus.DISCONNECTED);
+        connection.setEncryptedAccessToken(null);
+        repository.saveAndFlush(connection);
+        em.clear();
+
+        int updated = repository.markSyncSucceededIfConnected(
+                connection.getId(), ConnectionStatus.CONNECTED, "ciphertext", "ciphertext",
+                null, null,
+                LocalDateTime.now(), LocalDateTime.now());
+        em.clear();
+
+        CreatorInstagramConnection persisted = repository.findById(connection.getId()).orElseThrow();
+        assertThat(updated).isZero();
+        assertThat(persisted.getStatus()).isEqualTo(ConnectionStatus.DISCONNECTED);
+        assertThat(persisted.getEncryptedAccessToken()).isNull();
+    }
 }

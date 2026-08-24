@@ -9,10 +9,12 @@ import com.viralground.backend.repository.*;
 import com.viralground.backend.storage.FileStorage;
 import com.viralground.backend.storage.UploadOwnershipService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
@@ -40,6 +42,11 @@ class CompanyServiceProfileTest {
 
     @InjectMocks
     CompanyService companyService;
+
+    @BeforeEach
+    void enableUploads() {
+        ReflectionTestUtils.setField(companyService, "uploadsFeatureEnabled", true);
+    }
 
     private CompanyProfile profile() {
         return CompanyProfile.builder()

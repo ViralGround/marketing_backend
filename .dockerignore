@@ -1,0 +1,16 @@
+.git
+.github
+.gradle
+build
+bin
+docs
+scripts
+compose*.yml
+.env
+.env.*
+*.log
+uploads
+out
+.idea
+.vscode
+**/CLAUDE.md

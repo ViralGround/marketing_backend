@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import com.viralground.backend.storage.UploadOwnershipService;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
@@ -51,6 +52,7 @@ class CompanyServiceManageApplicationTest {
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(companyService, "paymentsFeatureEnabled", true);
         campaign = Campaign.builder()
                 .id(1).createdById(50).rewardAmount(30_000).build();
         submittedApp = CampaignApplication.builder()
@@ -130,6 +132,8 @@ class CompanyServiceManageApplicationTest {
                 eq("release:campaign:1:application:10"));
         assertThat(submittedApp.getStatus()).isEqualTo(ApplicationStatus.SETTLED);
         assertThat(submittedApp.getRewardPaidAmount()).isEqualTo(30_000);
+        assertThat(submittedApp.getContentApprovedAt()).isNull();
+        assertThat(submittedApp.getSettledAt()).isNotNull();
     }
 
     @Test
@@ -154,6 +158,88 @@ class CompanyServiceManageApplicationTest {
         ArgumentCaptor<ApplicationSubmission> sc = ArgumentCaptor.forClass(ApplicationSubmission.class);
         verify(submissionRepository).save(sc.capture());
         assertThat(sc.getValue().getStatus()).isEqualTo(SubmissionReviewStatus.REJECTED);
+    }
+
+    @Test
+    void should_COMPLETED_without_payment_mutation_when_APPROVE_CONTENT_in_managed_beta() {
+        ReflectionTestUtils.setField(companyService, "paymentsFeatureEnabled", false);
+        campaign.setEscrowStatus(EscrowStatus.NONE);
+        submittedApp.setRewardPaidAmount(null);
+        submittedApp.setSettledAt(null);
+        when(applicationRepository.findByIdForUpdate(10)).thenReturn(Optional.of(submittedApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        when(memberRepository.findById(7)).thenReturn(Optional.of(creator));
+        when(submissionRepository.findTopByApplicationIdOrderBySubmittedAtDesc(10))
+                .thenReturn(Optional.of(ApplicationSubmission.builder()
+                        .id(99).applicationId(10).status(SubmissionReviewStatus.SUBMITTED).build()));
+        CompanyApplicationActionRequest req = new CompanyApplicationActionRequest();
+        req.setAction(Action.APPROVE_CONTENT);
+
+        companyService.manageApplication(10, 50, req);
+
+        assertThat(submittedApp.getStatus()).isEqualTo(ApplicationStatus.SETTLED);
+        assertThat(submittedApp.getApiStatus()).isEqualTo("COMPLETED");
+        assertThat(submittedApp.getContentApprovedAt()).isNotNull();
+        assertThat(submittedApp.getRewardPaidAmount()).isNull();
+        assertThat(submittedApp.getSettledAt()).isNull();
+        assertThat(submittedApp.getReviewedAt()).isNotNull();
+        verifyNoInteractions(escrowService);
+        ArgumentCaptor<ApplicationResultEvent> event =
+                ArgumentCaptor.forClass(ApplicationResultEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().status()).isEqualTo("COMPLETED");
+        assertThat(event.getValue().rewardAmount()).isNull();
+    }
+
+    @Test
+    void should_fail_closed_when_APPROVE_VIDEO_in_managed_beta() {
+        ReflectionTestUtils.setField(companyService, "paymentsFeatureEnabled", false);
+        campaign.setEscrowStatus(EscrowStatus.NONE);
+        when(applicationRepository.findByIdForUpdate(10)).thenReturn(Optional.of(submittedApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        CompanyApplicationActionRequest req = new CompanyApplicationActionRequest();
+        req.setAction(Action.APPROVE_VIDEO);
+
+        assertThatThrownBy(() -> companyService.manageApplication(10, 50, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        verifyNoInteractions(escrowService);
+        verify(applicationRepository, never()).save(any());
+    }
+
+    @Test
+    void nonfinancial_marker_uses_old_terminal_status_and_rejects_reprocessing() {
+        ReflectionTestUtils.setField(companyService, "paymentsFeatureEnabled", false);
+        campaign.setEscrowStatus(EscrowStatus.NONE);
+        submittedApp.setStatus(ApplicationStatus.SETTLED);
+        submittedApp.setContentApprovedAt(java.time.LocalDateTime.now());
+        when(applicationRepository.findByIdForUpdate(10)).thenReturn(Optional.of(submittedApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        CompanyApplicationActionRequest req = new CompanyApplicationActionRequest();
+        req.setAction(Action.REQUEST_CHANGES);
+        req.setReviewComment("재처리 시도");
+
+        assertThatThrownBy(() -> companyService.manageApplication(10, 50, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        assertThat(submittedApp.getApiStatus()).isEqualTo("COMPLETED");
+        assertThat(submittedApp.getRewardPaidAmount()).isNull();
+        assertThat(submittedApp.getSettledAt()).isNull();
+        verifyNoInteractions(escrowService);
+    }
+
+    @Test
+    void should_reject_nonfinancial_completion_when_payments_enabled() {
+        campaign.setEscrowStatus(EscrowStatus.FUNDED);
+        when(applicationRepository.findByIdForUpdate(10)).thenReturn(Optional.of(submittedApp));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        CompanyApplicationActionRequest req = new CompanyApplicationActionRequest();
+        req.setAction(Action.APPROVE_CONTENT);
+
+        assertThatThrownBy(() -> companyService.manageApplication(10, 50, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        verifyNoInteractions(escrowService);
     }
 
     @Test

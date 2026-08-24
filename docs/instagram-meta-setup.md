@@ -15,36 +15,43 @@ Meta 문서와 API 버전은 변경될 수 있다. 배포 전 고정한 Graph AP
 
 ## 운영자가 직접 준비할 항목
 
-1. Meta for Developers에서 Business 유형 앱을 생성하고 Instagram 제품의 “API setup with Instagram login”을 활성화한다.
-2. 사업자 인증, 개인정보처리방침 URL, 서비스 약관 URL, 사용자 데이터 삭제 안내/콜백 URL을 등록한다.
-3. OAuth Valid Redirect URI에 백엔드 callback을 **문자열까지 정확히** 등록한다.
-   - 운영 예: `https://api.viralground.kr/instagram/meta/oauth/callback`
+1. 회사 소유 Meta Business Portfolio를 만들고 최소 두 명의 관리자를 지정한 뒤 모든 관리자에게 2FA를 강제한다.
+2. Meta for Developers에서 해당 Portfolio 소유의 Business 유형 앱을 생성하고 Instagram 제품의 “API setup with Instagram login”을 활성화한다.
+3. 사업자 인증, 개인정보처리방침 URL, 서비스 약관 URL, 사용자 데이터 삭제 안내/콜백 URL을 등록한다.
+4. OAuth Valid Redirect URI에 백엔드 callback을 **문자열까지 정확히** 등록한다.
+   - staging: `https://api.staging.viralground.kr/instagram/meta/oauth/callback`
    - `META_INSTAGRAM_REDIRECT_URI`도 완전히 같은 값이어야 한다.
-4. Webhook callback에 `https://api.viralground.kr/instagram/meta/webhook`을 등록하고
+5. Webhook callback에 `https://api.staging.viralground.kr/instagram/meta/webhook`을 등록하고
    `META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN`과 동일한 verify token을 입력한다.
-5. 앱 소유 계정만 연결하면 Standard Access로 테스트할 수 있다. 제3자 크리에이터 계정을 연결하려면 필요한 권한의
+6. 회사가 소유하고 앱 역할에 등록된 테스트용 Instagram Professional 계정을 연결한다. 앱 소유 계정만 연결하면 Standard Access로 테스트할 수 있다. 제3자 크리에이터 계정을 연결하려면 필요한 권한의
    Advanced Access와 App Review가 필요하다.
-6. 최소 요청 권한을 검토한다.
+7. 최소 요청 권한을 검토한다.
    - `instagram_business_basic`: 계정과 소유 미디어 식별
    - `instagram_business_manage_insights`: 미디어 insights 조회
-7. App Review 제출 영상에는 로그인, 권한 설명, 계정 일치 실패, 연결 해제/권한 철회, 수집 지표의 사용 화면을 포함한다.
-8. 개발 모드에서는 App Dashboard에 역할이 있는 테스터와 테스트용 Professional 계정만 동작한다. 공개 베타 전 Live mode와
-   승인 상태를 실제 비소유 테스트 계정으로 확인한다.
+8. App Review 제출 영상에는 로그인, 권한 설명, 계정 일치 실패, 연결 해제/권한 철회, 수집 지표의 사용 화면을 포함하고 심사용 테스트 계정을 준비한다.
+9. 개발 모드에서는 App Dashboard에 역할이 있는 테스터와 테스트용 Professional 계정만 동작한다. Advanced Access 승인 전에는 `FEATURE_INSTAGRAM_ENABLED=false`로 공개 UI와 API를 닫는다. 승인 후 실제 비소유 Professional 계정 E2E까지 통과해야 공개 기능을 활성화한다.
 
 ## 필수 환경변수
 
 ```dotenv
-APP_ENV=production
+APP_ENV=preproduction
+FEATURE_INSTAGRAM_ENABLED=false
 INSTAGRAM_PROVIDER=meta
 META_INSTAGRAM_APP_ID=
 META_INSTAGRAM_APP_SECRET=
-META_INSTAGRAM_REDIRECT_URI=https://api.viralground.kr/instagram/meta/oauth/callback
-META_INSTAGRAM_FRONTEND_RESULT_URL=https://viralground.kr/creator/mypage
+META_INSTAGRAM_REDIRECT_URI=https://api.staging.viralground.kr/instagram/meta/oauth/callback
+META_INSTAGRAM_FRONTEND_RESULT_URL=https://staging.viralground.kr/creator/mypage
 META_INSTAGRAM_TOKEN_ENCRYPTION_KEY=
 META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
 META_INSTAGRAM_API_VERSION=v25.0
 META_INSTAGRAM_SCOPES=instagram_business_basic,instagram_business_manage_insights
 ```
+
+기능을 켜면 authorization, OAuth, Graph endpoint는 각각
+`https://www.instagram.com/oauth/authorize`, `https://api.instagram.com`,
+`https://graph.instagram.com`만 허용된다. `preproduction`/`staging`의 redirect와 frontend
+result URL은 위 예시의 host와 path까지 정확히 일치해야 하며 query, fragment, userinfo,
+별도 port를 붙일 수 없다.
 
 `META_INSTAGRAM_TOKEN_ENCRYPTION_KEY`는 CSPRNG로 만든 32-byte 키를 Base64로 인코딩한다. 예:
 
@@ -56,8 +63,11 @@ openssl rand -base64 32
 교체하면 기존 연결 토큰을 해독할 수 없다. 키 회전 시에는 기존 키를 유지한 keyring 마이그레이션을 먼저 구현하거나 모든 사용자의
 재연결을 계획해야 한다.
 
-`APP_ENV=production`인데 `INSTAGRAM_PROVIDER=mock`이면 애플리케이션은 기동을 거부한다. Meta provider는 필수 비밀값이
-비어 있어도 기동을 거부한다.
+`production`, `preproduction`, `staging`에서 Instagram 기능을 활성화했는데
+`INSTAGRAM_PROVIDER=mock`이면 애플리케이션은 기동을 거부한다. 기능이 비활성화된
+초기 staging은 mock provider로 기동할 수 있지만 authorize/connection/callback/webhook
+업무 처리는 fail-closed여야 한다. Meta provider를 활성화하면 필수 비밀값이 비어 있어도
+기동을 거부한다.
 
 ## 프론트엔드 계약
 
@@ -96,6 +106,8 @@ callback의 `code`, `state`, access token, app secret은 로그에 기록하지 
 8. 연결 해제 후 Meta의 앱 권한 목록에서도 앱이 제거되고 DB 토큰 컬럼이 NULL이다.
 9. Meta rate limit/5xx에서 최대 재시도 후 한 작업만 실패하며 전체 batch는 계속된다.
 10. 운영 로그·Sentry·프록시 access log 어디에도 query의 OAuth code/state/token이 남지 않는지 확인한다.
+11. 공개 역할이 없는 Professional 계정으로 승인된 권한 범위의 전체 E2E가 성공한다.
+12. callback/webhook URL이 staging host 외 요청을 만들지 않고 production secret·DB·bucket을 참조하지 않는다.
 
 마지막 항목 때문에 프록시와 APM에서도 callback query string 마스킹을 설정해야 한다. 애플리케이션 로그만으로는 인프라 access
 log의 query 기록을 통제할 수 없다.

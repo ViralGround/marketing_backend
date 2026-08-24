@@ -41,7 +41,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     int memberId = Integer.parseInt(claims.getSubject());
                     var member = memberRepository.findById(memberId).orElse(null);
                     if (member == null || member.getStatus() != MemberStatus.APPROVED
-                            || !Boolean.TRUE.equals(member.getEmailVerified())) {
+                            || !Boolean.TRUE.equals(member.getEmailVerified())
+                            || !jwtService.hasCurrentAuthVersion(claims, member)) {
                         SecurityContextHolder.clearContext();
                         filterChain.doFilter(request, response);
                         return;

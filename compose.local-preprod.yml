@@ -1,0 +1,84 @@
+name: viralground-local-preprod
+
+# Synthetic dependencies only. Nothing in this file accepts or references a
+# production credential, hostname, database, bucket, or volume.
+services:
+  postgres:
+    image: postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+    environment:
+      POSTGRES_DB: viralground_local_staging
+      POSTGRES_USER: viralground_local
+      POSTGRES_PASSWORD: local-postgres-only-not-secret
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - viralground_local_postgres:/var/lib/postgresql/data
+      - ./scripts/local/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U viralground_local -d viralground_local_staging"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    labels:
+      com.viralground.data-classification: synthetic-local
+    restart: "no"
+
+  redis:
+    image: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "local-redis-only-not-secret"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    volumes:
+      - viralground_local_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "local-redis-only-not-secret", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    labels:
+      com.viralground.data-classification: synthetic-local
+    restart: "no"
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: local-minio-admin
+      MINIO_ROOT_PASSWORD: local-minio-only-not-secret
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:59001:9001"
+    volumes:
+      - viralground_local_minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    labels:
+      com.viralground.data-classification: synthetic-local
+    restart: "no"
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 local-minio-admin local-minio-only-not-secret
+        mc mb --ignore-existing local/viralground-local-staging
+        mc anonymous set none local/viralground-local-staging
+    labels:
+      com.viralground.data-classification: synthetic-local
+    restart: "no"
+
+volumes:
+  viralground_local_postgres:
+    name: viralground_local_preprod_postgres
+  viralground_local_redis:
+    name: viralground_local_preprod_redis
+  viralground_local_minio:
+    name: viralground_local_preprod_minio

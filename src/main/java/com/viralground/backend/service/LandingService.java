@@ -20,6 +20,7 @@ import com.viralground.backend.repository.ReviewRepository;
 import com.viralground.backend.repository.SubmissionMetricRepository;
 import com.viralground.backend.storage.FileStorage;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +55,14 @@ public class LandingService {
     private final FileStorage fileStorage;
     private final Clock clock;
 
+    /**
+     * Public landing responses must not advertise a monetary offer while the
+     * non-transactional release is active. This server-side projection is the
+     * source of truth; the browser feature flag is only a presentation guard.
+     */
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsEnabled;
+
     @Transactional(readOnly = true)
     public List<FeaturedCampaignResponse> getFeaturedCampaigns() {
         List<Campaign> featured = campaignRepository.findFeaturedOpen(LocalDateTime.now(clock))
@@ -87,7 +96,7 @@ public class LandingService {
                             c.getId(),
                             c.getTitle(),
                             c.getBrandName(),
-                            c.getRewardAmount(),
+                            publicReward(c.getRewardAmount()),
                             c.getDeadline(),
                             c.getMaxParticipants(),
                             countByCampaignId.getOrDefault(c.getId(), 0L).intValue(),
@@ -169,7 +178,7 @@ public class LandingService {
         List<CompanyPublicResponse.OpenCampaignItem> openCampaigns =
                 campaignRepository.findOpenByCreator(memberId, LocalDateTime.now(clock)).stream()
                         .map(c -> new CompanyPublicResponse.OpenCampaignItem(
-                                c.getId(), c.getTitle(), c.getRewardAmount(), c.getDeadline()))
+                                c.getId(), c.getTitle(), publicReward(c.getRewardAmount()), c.getDeadline()))
                         .toList();
 
         return new CompanyPublicResponse(
@@ -179,6 +188,10 @@ public class LandingService {
                 profile.getIntroduction(),
                 resolveLogoUrl(profile),
                 openCampaigns);
+    }
+
+    private Integer publicReward(Integer rewardAmount) {
+        return paymentsEnabled ? rewardAmount : null;
     }
 
     private String resolveThumbUrl(Campaign c) {

@@ -1,12 +1,16 @@
 package com.viralground.backend.controller;
 
 import com.viralground.backend.dto.auth.LoginRequest;
+import com.viralground.backend.dto.auth.PasswordResetCodeRequest;
 import com.viralground.backend.dto.auth.TokenResponse;
+import com.viralground.backend.exception.AppException;
+import com.viralground.backend.exception.ErrorCode;
 import com.viralground.backend.service.AuthService;
 import com.viralground.backend.service.EmailVerificationService;
 import com.viralground.backend.service.PasswordResetService;
 import com.viralground.backend.service.RateLimitService;
 import com.viralground.backend.service.AuthCookieService;
+import com.viralground.backend.config.StagingAccountProvisioningPolicy;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +22,11 @@ import org.springframework.security.web.csrf.DefaultCsrfToken;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AuthControllerCookieTest {
@@ -30,7 +38,8 @@ class AuthControllerCookieTest {
         authService = mock(AuthService.class);
         AuthCookieService cookieService = new AuthCookieService(false, "", "Lax");
         controller = new AuthController(authService, mock(EmailVerificationService.class),
-                mock(PasswordResetService.class), mock(RateLimitService.class), cookieService);
+                mock(PasswordResetService.class), mock(RateLimitService.class), cookieService,
+                mock(StagingAccountProvisioningPolicy.class));
     }
 
     @Test
@@ -58,7 +67,8 @@ class AuthControllerCookieTest {
     void productionCookiesAreSecureAndShareConfiguredParentDomain() {
         controller = new AuthController(authService, mock(EmailVerificationService.class),
                 mock(PasswordResetService.class), mock(RateLimitService.class),
-                new AuthCookieService(true, ".viralground.example", "Lax"));
+                new AuthCookieService(true, ".viralground.example", "Lax"),
+                mock(StagingAccountProvisioningPolicy.class));
         when(authService.login(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new TokenResponse("access-secret", "refresh-secret"));
         MockHttpServletResponse servletResponse = new MockHttpServletResponse();
@@ -89,5 +99,28 @@ class AuthControllerCookieTest {
         var response = controller.csrf(new DefaultCsrfToken("X-XSRF-TOKEN", "_csrf", "csrf-value"));
 
         assertThat(response.getBody()).containsOnlyKeys("token").containsEntry("token", "csrf-value");
+    }
+
+    @Test
+    void passwordResetRequestAppliesStagingIdentityPolicyBeforeLookup() {
+        PasswordResetService resetService = mock(PasswordResetService.class);
+        RateLimitService rateLimitService = mock(RateLimitService.class);
+        StagingAccountProvisioningPolicy policy = mock(StagingAccountProvisioningPolicy.class);
+        AuthController guardedController = new AuthController(
+                authService, mock(EmailVerificationService.class), resetService,
+                rateLimitService, new AuthCookieService(false, "", "Lax"), policy);
+        PasswordResetCodeRequest request = new PasswordResetCodeRequest();
+        request.setEmail("outside@example.com");
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(policy).requireAllowedEmail("outside@example.com");
+
+        assertThatThrownBy(() -> guardedController.requestPasswordResetCode(
+                request, new MockHttpServletRequest()))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(policy).requireAllowedEmail("outside@example.com");
+        verifyNoInteractions(resetService, rateLimitService);
     }
 }

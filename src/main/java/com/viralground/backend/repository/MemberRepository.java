@@ -5,15 +5,21 @@ import com.viralground.backend.entity.MemberStatus;
 import com.viralground.backend.entity.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import jakarta.persistence.LockModeType;
 
 public interface MemberRepository extends JpaRepository<Member, Integer> {
 
     Optional<Member> findByEmail(String email);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT member FROM Member member WHERE member.id = :id")
+    Optional<Member> findByIdForUpdate(@Param("id") Integer id);
 
     boolean existsByEmail(String email);
 

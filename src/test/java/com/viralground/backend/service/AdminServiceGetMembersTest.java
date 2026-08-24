@@ -1,5 +1,6 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.config.StagingAccountProvisioningPolicy;
 import com.viralground.backend.entity.*;
 import com.viralground.backend.repository.*;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ class AdminServiceGetMembersTest {
     @Mock EscrowService escrowService;
     @Mock ApplicationSubmissionRepository submissionRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock StagingAccountProvisioningPolicy stagingAccountProvisioningPolicy;
 
     @InjectMocks
     AdminService adminService;
@@ -160,5 +162,17 @@ class AdminServiceGetMembersTest {
         // then — IN 쿼리 1회만, 개별 findByMemberId 는 0회.
         verify(profileRepository, org.mockito.Mockito.times(1)).findByMemberIdIn(anyCollection());
         verify(profileRepository, never()).findByMemberId(org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void provisioningPolicyGuardsMemberApprovalBeforeStatusMutation() {
+        Member member = creator(12, true);
+        when(memberRepository.findById(12)).thenReturn(java.util.Optional.of(member));
+
+        adminService.updateMemberStatus(12, MemberStatus.APPROVED);
+
+        verify(stagingAccountProvisioningPolicy)
+                .requireAllowedApproval(member, MemberStatus.APPROVED);
+        verify(memberRepository).save(member);
     }
 }

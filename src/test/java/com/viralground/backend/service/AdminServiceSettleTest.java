@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
@@ -43,6 +44,7 @@ class AdminServiceSettleTest {
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", true);
         app = CampaignApplication.builder()
                 .id(10)
                 .campaignId(1)
@@ -100,6 +102,7 @@ class AdminServiceSettleTest {
         app.setStatus(ApplicationStatus.SETTLED);
         campaign.setEscrowStatus(EscrowStatus.PARTIALLY_RELEASED); // 첫 지급 이후 상태
         when(applicationRepository.findById(10)).thenReturn(Optional.of(app));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
         UpdateApplicationStatusRequest req = new UpdateApplicationStatusRequest();
         req.setStatus(ApplicationStatus.SETTLED);
 
@@ -110,5 +113,23 @@ class AdminServiceSettleTest {
 
         verify(escrowService, never()).release(anyInt(), anyInt(), anyInt(), any(), anyString(), nullable(String.class));
         verify(applicationRepository, never()).save(any());
+    }
+
+    @Test
+    void paymentsDisabledRejectsRewardAmountOnNonSettlementStatus() {
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", false);
+        when(applicationRepository.findById(10)).thenReturn(Optional.of(app));
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        UpdateApplicationStatusRequest req = new UpdateApplicationStatusRequest();
+        req.setStatus(ApplicationStatus.APPROVED);
+        req.setRewardPaidAmount(1_000_000);
+
+        assertThatThrownBy(() -> adminService.updateApplication(10, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+
+        verify(applicationRepository, never()).save(any());
+        verifyNoInteractions(escrowService);
     }
 }

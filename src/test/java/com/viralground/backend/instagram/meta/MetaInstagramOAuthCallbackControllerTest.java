@@ -3,7 +3,9 @@ package com.viralground.backend.instagram.meta;
 import com.viralground.backend.instagram.InstagramIntegrationException;
 import com.viralground.backend.service.InstagramConnectionService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.util.List;
@@ -22,6 +24,22 @@ class MetaInstagramOAuthCallbackControllerTest {
             Duration.ofSeconds(3), Duration.ofSeconds(8), Duration.ZERO, Duration.ofDays(7), 3, 50, 3, 14);
     private final MetaInstagramOAuthCallbackController controller =
             new MetaInstagramOAuthCallbackController(service, properties);
+
+    @BeforeEach
+    void enableFeatureForRedirectTests() {
+        ReflectionTestUtils.setField(controller, "instagramFeatureEnabled", true);
+    }
+
+    @Test
+    void disabledFeatureReturns503WithoutRedirectOrServiceCall() {
+        ReflectionTestUtils.setField(controller, "instagramFeatureEnabled", false);
+
+        var response = controller.callback("secret-code", "secret-state", null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getHeaders().getLocation()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(service);
+    }
 
     @Test
     void successRedirectsWithoutCodeOrState() {

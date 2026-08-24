@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
@@ -43,6 +44,8 @@ class AdminServiceUpdateCampaignTest {
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(adminService, "uploadsFeatureEnabled", true);
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", true);
         campaign = Campaign.builder()
                 .id(1)
                 .rewardAmount(10_000)
@@ -164,5 +167,17 @@ class AdminServiceUpdateCampaignTest {
         assertThatThrownBy(() -> adminService.updateCampaign(1, req))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_CAMPAIGN_INPUT);
+    }
+
+    @Test
+    void paymentsDisabledRejectsMutationOfLegacyFinancialCampaign() {
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", false);
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+        UpdateCampaignAdminRequest req = new UpdateCampaignAdminRequest();
+        req.setTitle("must not change");
+
+        assertThatThrownBy(() -> adminService.updateCampaign(1, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
     }
 }

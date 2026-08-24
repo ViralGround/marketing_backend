@@ -28,6 +28,8 @@ class JwtServiceTest {
         assertThat(claims.getAudience()).contains("viralground-web");
         assertThat(claims.getId()).isNotBlank();
         assertThat(claims.get("role", String.class)).isEqualTo("CREATOR");
+        assertThat(claims.get("auth_version", Number.class).longValue()).isZero();
+        assertThat(service.hasCurrentAuthVersion(claims, member)).isTrue();
         assertThat(claims).doesNotContainKeys("email", "name");
     }
 
@@ -38,6 +40,14 @@ class JwtServiceTest {
         assertThat(service.isTokenType(claims, "refresh")).isTrue();
         assertThat(claims.getId()).isEqualTo(issued.tokenId());
         assertThat(claims.get("family_id", String.class)).isEqualTo("family-1");
+        assertThat(service.hasCurrentAuthVersion(claims, member)).isTrue();
+    }
+
+    @Test
+    void tokenBecomesInvalidAfterMemberAuthVersionChanges() {
+        var claims = service.parseToken(service.generateAccessToken(member));
+        member.incrementAuthVersion();
+        assertThat(service.hasCurrentAuthVersion(claims, member)).isFalse();
     }
 
     @Test

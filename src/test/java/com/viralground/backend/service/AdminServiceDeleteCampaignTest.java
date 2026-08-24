@@ -12,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -46,13 +47,15 @@ class AdminServiceDeleteCampaignTest {
         campaign = Campaign.builder()
                 .id(1)
                 .status(CampaignStatus.OPEN)
-                .escrowStatus(EscrowStatus.FUNDED)
+                .escrowStatus(EscrowStatus.NONE)
                 .build();
     }
 
     @Test
     void should_CAMPAIGN_HAS_SETTLEMENT_예외_when_결제_원장이_있는_캠페인_삭제() {
         // given — 결제 종류와 무관하게 append-only 원장이 존재하면 삭제 거부
+        ReflectionTestUtils.setField(adminService, "paymentsFeatureEnabled", true);
+        campaign.setEscrowStatus(EscrowStatus.FUNDED);
         when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
         when(escrowTransactionRepository.existsByCampaignId(1)).thenReturn(true);
 
@@ -60,6 +63,19 @@ class AdminServiceDeleteCampaignTest {
         assertThatThrownBy(() -> adminService.deleteCampaign(1))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.CAMPAIGN_HAS_SETTLEMENT);
+        verify(campaignRepository, never()).delete(any());
+    }
+
+    @Test
+    void paymentsDisabledRejectsDeletionOfLegacyFinancialCampaign() {
+        campaign.setEscrowStatus(EscrowStatus.FUNDED);
+        when(campaignRepository.findById(1)).thenReturn(Optional.of(campaign));
+
+        assertThatThrownBy(() -> adminService.deleteCampaign(1))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+
+        verifyNoInteractions(escrowTransactionRepository);
         verify(campaignRepository, never()).delete(any());
     }
 

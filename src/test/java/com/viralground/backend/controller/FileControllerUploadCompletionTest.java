@@ -12,6 +12,7 @@ import com.viralground.backend.storage.UploadOwnershipService;
 import com.viralground.backend.storage.UploadStatus;
 import com.viralground.backend.logging.AuditService;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -30,6 +31,7 @@ class FileControllerUploadCompletionTest {
         UploadOwnershipService ownership = mock(UploadOwnershipService.class);
         FileController controller = new FileController(
                 storage, Optional.<LocalFileStorage>empty(), ownership, mock(AuditService.class));
+        ReflectionTestUtils.setField(controller, "uploadsFeatureEnabled", true);
         String key = "submissions/7ce9b7eb-719a-4d87-853b-cd51fb98e2b0.mp4";
         Instant uploadedAt = Instant.parse("2026-08-13T05:00:00Z");
         when(ownership.completeOwnedUpload(key, 31)).thenReturn(
@@ -49,11 +51,28 @@ class FileControllerUploadCompletionTest {
         FileController controller = new FileController(
                 mock(FileStorage.class), Optional.<LocalFileStorage>empty(), ownership,
                 mock(AuditService.class));
+        ReflectionTestUtils.setField(controller, "uploadsFeatureEnabled", true);
 
         assertThatThrownBy(() -> controller.completeUpload(
                 new CompleteUploadRequest("submissions/test.mp4"), null))
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    void completeUploadFailsClosedWhenFeatureIsDisabled() {
+        UploadOwnershipService ownership = mock(UploadOwnershipService.class);
+        FileController controller = new FileController(
+                mock(FileStorage.class), Optional.<LocalFileStorage>empty(), ownership,
+                mock(AuditService.class));
+        ReflectionTestUtils.setField(controller, "uploadsFeatureEnabled", false);
+
+        assertThatThrownBy(() -> controller.completeUpload(
+                new CompleteUploadRequest("submissions/test.mp4"),
+                new AuthUser(31, "qa@example.test", Role.CREATOR, "QA")))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UPLOAD_FEATURE_DISABLED);
     }
 }

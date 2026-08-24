@@ -1,5 +1,6 @@
 package com.viralground.backend.instagram.webhook;
 
+import com.viralground.backend.config.PreproductionScheduledMutationGuard;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.viralground.backend.instagram.InstagramIntegrationException;
@@ -8,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,20 +31,33 @@ public class InstagramWebhookService {
     private final MetaInstagramProperties properties;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final PreproductionScheduledMutationGuard scheduledMutationGuard;
+
+    @Value("${features.instagram.enabled:false}")
+    private boolean instagramFeatureEnabled = false;
+
+    @Value("${app.scheduling.enabled:false}")
+    private boolean schedulingEnabled;
+
+    @Value("${instagram.webhook.cleanup-enabled:false}")
+    private boolean cleanupEnabled;
 
     public InstagramWebhookService(MetaInstagramWebhookVerifier verifier,
                                    InstagramWebhookDeliveryRepository repository,
                                    MetaInstagramProperties properties,
                                    ObjectMapper objectMapper,
-                                   Clock clock) {
+                                   Clock clock,
+                                   PreproductionScheduledMutationGuard scheduledMutationGuard) {
         this.verifier = verifier;
         this.repository = repository;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.scheduledMutationGuard = scheduledMutationGuard;
     }
 
     public Acceptance accept(byte[] payload, String signature) {
+        requireInstagramEnabled();
         if (payload == null || payload.length == 0 || payload.length > MAX_PAYLOAD_BYTES) {
             throw new InstagramIntegrationException("INSTAGRAM_WEBHOOK_INVALID",
                     "잘못된 webhook 요청입니다", HttpStatus.BAD_REQUEST);
@@ -75,12 +90,15 @@ public class InstagramWebhookService {
     }
 
     public boolean verifyChallenge(String mode, String verifyToken) {
+        if (!instagramFeatureEnabled) return false;
         return "subscribe".equals(mode) && verifier.validVerifyToken(verifyToken);
     }
 
     @Scheduled(cron = "0 43 3 * * *", zone = "UTC")
     @Transactional
     public void purgeOldDeliveries() {
+        if (!schedulingEnabled || !cleanupEnabled || !instagramFeatureEnabled) return;
+        scheduledMutationGuard.requireSafe();
         long deleted = repository.deleteByReceivedAtBefore(
                 LocalDateTime.now(clock).minusDays(properties.webhookRetentionDays()));
         if (deleted > 0) {
@@ -113,6 +131,13 @@ public class InstagramWebhookService {
     private static InstagramIntegrationException invalidPayload() {
         return new InstagramIntegrationException("INSTAGRAM_WEBHOOK_INVALID",
                 "잘못된 webhook 요청입니다", HttpStatus.BAD_REQUEST);
+    }
+
+    private void requireInstagramEnabled() {
+        if (!instagramFeatureEnabled) {
+            throw new InstagramIntegrationException("INSTAGRAM_FEATURE_DISABLED",
+                    "Instagram 연동 기능이 활성화되지 않았습니다", HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 
     public enum Acceptance { ACCEPTED, DUPLICATE }

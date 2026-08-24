@@ -1,8 +1,13 @@
-# S3/R2 객체 저장소 운영 설정
+# S3/R2 객체 저장소 사전운영 설정
 
 ## 저장소 선택
 
-`FILES_STORAGE=local`은 로컬 개발·테스트 흐름을 그대로 유지한다. 운영에서는 `FILES_STORAGE=s3`만 허용되며, 필수 설정이 없거나 커스텀 endpoint가 HTTP면 서버가 기동하지 않는다.
+`FILES_STORAGE=local`은 로컬 개발·테스트 흐름을 그대로 유지한다. 보호 환경에서 업로드를 활성화할 때는 `FILES_STORAGE=s3`만 허용되며, 필수 설정이 없거나 커스텀 endpoint가 HTTP면 서버가 기동하지 않는다.
+
+현재 release candidate는 공급자와 전용 bucket이 확정될 때까지
+`FEATURE_UPLOADS_ENABLED=false`, `FILES_STORAGE=disabled`를 유지한다. 아래 설정은
+운영 bucket이 아니라 새 `viralground-staging` bucket에만 적용한다. 운영 bucket 공유,
+운영 객체 복사, 운영 자격증명 재사용은 금지한다.
 
 AWS S3:
 
@@ -10,7 +15,9 @@ AWS S3:
 FILES_STORAGE=s3
 FILES_S3_ENDPOINT=
 FILES_S3_REGION=ap-northeast-2
-FILES_S3_BUCKET=viralground-production
+FILES_S3_BUCKET=viralground-staging
+FILES_S3_STAGING_ALLOWED_BUCKETS=viralground-staging
+FILES_S3_PRODUCTION_ALLOWED_BUCKETS=<CURRENT_PRODUCTION_BUCKET>
 FILES_S3_CREDENTIALS_MODE=default-chain
 FILES_S3_PATH_STYLE=false
 ```
@@ -21,7 +28,9 @@ Cloudflare R2:
 FILES_STORAGE=s3
 FILES_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 FILES_S3_REGION=auto
-FILES_S3_BUCKET=viralground-production
+FILES_S3_BUCKET=viralground-staging
+FILES_S3_STAGING_ALLOWED_BUCKETS=viralground-staging
+FILES_S3_PRODUCTION_ALLOWED_BUCKETS=<CURRENT_PRODUCTION_BUCKET>
 FILES_S3_CREDENTIALS_MODE=static
 FILES_S3_ACCESS_KEY=<R2_ACCESS_KEY_ID>
 FILES_S3_SECRET_KEY=<R2_SECRET_ACCESS_KEY>
@@ -30,7 +39,17 @@ FILES_S3_PATH_STYLE=true
 
 `static`은 access key/secret key가 모두 필수다. 임시 AWS 자격증명을 쓸 때만 `FILES_S3_SESSION_TOKEN`을 추가한다. `default-chain`은 키를 환경변수로 저장하지 않는 IRSA, ECS task role, EC2 instance role 방식에 권장한다.
 
-API 자격증명에는 해당 bucket/prefix에 대한 `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`만 주는 최소 권한 정책을 사용한다. S3 `HeadObject`는 `s3:GetObject` 권한을 사용한다. bucket 목록·삭제 권한은 주지 않는다.
+`preproduction`/`staging`/`production`은 staging과 production bucket allowlist를 모두
+명시해야 한다. 두 목록은 겹칠 수 없으며 현재 환경의 bucket은 해당 exact allowlist에
+있어야 한다. 상대 환경 목록은 운영 bucket 공유를 막는 denylist로도 사용된다. 사용자
+지정 endpoint는 HTTPS이고 DNS 결과가 public 주소여야 한다. AWS SDK의 region 기반 기본
+endpoint를 쓸 때만 `FILES_S3_ENDPOINT`를 비워 둔다.
+
+API 자격증명에는 staging bucket/prefix에 대한 `s3:PutObject`, `s3:GetObject`,
+`s3:DeleteObject`만 주는 최소 권한 정책을 사용한다. S3 `HeadObject`는
+`s3:GetObject` 권한을 사용한다. bucket 목록·bucket 삭제·다른 bucket 권한은 주지
+않는다. 서버 측 암호화, versioning, 미완료·테스트 객체 7일 lifecycle을 공급자
+콘솔과 API 결과로 각각 확인하고 증빙 hash를 release manifest에 기록한다.
 
 ## 브라우저 CORS
 
@@ -39,7 +58,7 @@ API 자격증명에는 해당 bucket/prefix에 대한 `s3:PutObject`, `s3:GetObj
 ```json
 [
   {
-    "AllowedOrigins": ["https://viralground.example"],
+    "AllowedOrigins": ["https://staging.viralground.kr"],
     "AllowedMethods": ["PUT", "GET", "HEAD"],
     "AllowedHeaders": ["Content-Type", "Content-Length", "x-amz-*"],
     "ExposeHeaders": ["ETag"],
@@ -95,6 +114,13 @@ API 자격증명에는 해당 bucket/prefix에 대한 `s3:PutObject`, `s3:GetObj
 `FILES_STORAGE=local`에서는 기존 `/files/upload/{key}?sig=...&exp=...` PUT이 실제 파일 검증과 상태 전환까지 수행하므로 기존 로컬 흐름이 유지된다. S3/R2 흐름에서는 완료 API가 필수다.
 
 ## 운영 검증
+
+공급자 확정 전에는 MinIO/Testcontainers 계약 테스트만 실행한다. 실제 staging에서는
+새 bucket을 만든 후 `presign -> PUT -> HEAD -> complete -> GET -> delete` 전 과정을
+다시 실행한다. 과대 파일, MIME/서명 header 불일치, 다른 사용자의 key, 만료 URL,
+존재하지 않는 객체, 저장 길이 불일치, orphan cleanup의 실제 객체 삭제도 모두
+fail-closed여야 한다. 공급자·bucket·IAM·CORS·암호화·versioning·lifecycle 증빙 중
+하나라도 없으면 업로드는 최종 GO 대상이 아니다.
 
 - Flyway `V5__object_storage_upload_status.sql`이 기존 `uploaded_at` 레코드를 `UPLOADED`로 이관한다.
 - `FILES_SIGNING_TTL`은 1초~7일만 허용하며 기본은 15분이다.

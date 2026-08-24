@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Offline CI fixture only. It simulates a PostgreSQL safety-gate result in which
+# the audit login can SET ROLE to an unapproved role. Never put this directory on
+# PATH outside the explicit refusal test.
+sql="$(cat)"
+grep -Fq "set_role_escalation_membership" <<<"${sql}" || exit 98
+violation="${PSQL_FIXTURE_VIOLATION:-set_role}"
+case "${violation}" in
+  set_role|column_write|security_definer|dangerous_role|temp|rls|rls_policy) ;;
+  *) exit 97 ;;
+esac
+set_role_count=0
+column_write_count=0
+security_definer_count=0
+dangerous_role_count=0
+temp_count=0
+rls_count=0
+rls_policy_count=0
+if [[ "${violation}" == "set_role" ]]; then
+  set_role_count=1
+elif [[ "${violation}" == "column_write" ]]; then
+  grep -Fq "column_write_privilege" <<<"${sql}" || exit 96
+  column_write_count=1
+elif [[ "${violation}" == "security_definer" ]]; then
+  grep -Fq "executable_security_definer_path" <<<"${sql}" || exit 96
+  security_definer_count=1
+elif [[ "${violation}" == "dangerous_role" ]]; then
+  grep -Fq "dangerous_predefined_role_membership" <<<"${sql}" || exit 96
+  dangerous_role_count=1
+elif [[ "${violation}" == "temp" ]]; then
+  grep -Fq "database_temp_privilege" <<<"${sql}" || exit 96
+  temp_count=1
+elif [[ "${violation}" == "rls" ]]; then
+  grep -Fq "public_rls_enabled_or_forced" <<<"${sql}" || exit 96
+  rls_count=1
+else
+  grep -Fq "public_rls_policy_exists" <<<"${sql}" || exit 96
+  rls_policy_count=1
+fi
+printf '%s\n' \
+  $'column_write_privilege\t'"${column_write_count}" \
+  $'database_create_privilege\t0' \
+  $'database_temp_privilege\t'"${temp_count}" \
+  $'dangerous_predefined_role_membership\t'"${dangerous_role_count}" \
+  $'direct_table_write_privilege\t0' \
+  $'executable_security_definer_path\t'"${security_definer_count}" \
+  $'pg_write_all_data_membership\t0' \
+  $'public_rls_enabled_or_forced\t'"${rls_count}" \
+  $'public_rls_policy_exists\t'"${rls_policy_count}" \
+  $'role_can_bypass_rls\t0' \
+  $'role_can_create_database\t0' \
+  $'role_can_create_role\t0' \
+  $'role_can_replicate\t0' \
+  $'role_is_superuser\t0' \
+  $'sequence_write_privilege\t0' \
+  $'session_not_read_only\t0' \
+  $'set_role_escalation_membership\t'"${set_role_count}" \
+  $'writable_schema_privilege\t0' \
+  $'wrong_database\t0' \
+  $'wrong_role\t0' \
+  $'wrong_session_user\t0'

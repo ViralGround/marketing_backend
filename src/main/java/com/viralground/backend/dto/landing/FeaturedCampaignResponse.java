@@ -1,5 +1,7 @@
 package com.viralground.backend.dto.landing;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.LocalDateTime;
 
 /**
@@ -11,7 +13,7 @@ public record FeaturedCampaignResponse(
         Integer id,
         String title,
         String brandName,
-        Integer rewardAmount,
+        @JsonInclude(JsonInclude.Include.NON_NULL) Integer rewardAmount,
         LocalDateTime deadline,
         Integer maxParticipants,
         Integer applicationCount,

@@ -1,5 +1,6 @@
 package com.viralground.backend.dto.campaign;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.viralground.backend.entity.Campaign;
 import com.viralground.backend.entity.CampaignApplication;
 import com.viralground.backend.entity.CampaignStatus;
@@ -14,6 +15,7 @@ public class CampaignResponse {
     private final String title;
     private final String description;
     private final String brandName;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private final Integer rewardAmount;
     private final String thumbnailUrl;
     private final String requirements;
@@ -24,12 +26,13 @@ public class CampaignResponse {
     private final Integer applicationCount;
     private final ApplicationSummary myApplication;
 
-    public CampaignResponse(Campaign c, CampaignApplication myApp, int applicationCount, String thumbnailUrl) {
+    public CampaignResponse(Campaign c, CampaignApplication myApp, int applicationCount,
+                            String thumbnailUrl, boolean exposePayments) {
         this.id = c.getId();
         this.title = c.getTitle();
         this.description = c.getDescription();
         this.brandName = c.getBrandName();
-        this.rewardAmount = c.getRewardAmount();
+        this.rewardAmount = exposePayments ? c.getRewardAmount() : null;
         this.thumbnailUrl = thumbnailUrl;
         this.requirements = c.getRequirements();
         this.deadline = c.getDeadline();
@@ -42,7 +45,7 @@ public class CampaignResponse {
 
     public record ApplicationSummary(Integer id, String status) {
         ApplicationSummary(CampaignApplication a) {
-            this(a.getId(), a.getStatus().name());
+            this(a.getId(), a.getApiStatus());
         }
     }
 }

@@ -1,0 +1,286 @@
+schemaVersion: 5
+releaseId: "rc-YYYYMMDD-NNN"
+createdAtUtc: "YYYY-MM-DDTHH:MM:SSZ"
+status: "DRAFT" # DRAFT | REJECTED | QUALIFIED (never DEPLOYED here)
+
+source:
+  frontendCommit: "<40-char-sha>"
+  backendCommit: "<40-char-sha>"
+  branch: "launch-p0"
+
+artifacts:
+  # Hash of the immutable candidate artifact identity recorded in every same-SHA run.
+  candidateArtifactSetSha256: "<sha256>"
+  backendImage: "<registry/repository@sha256:digest>"
+  backendImageArchiveSha256: "<sha256-of-preserved-scanned-docker-archive>"
+  backendLocalImageContentId: "<sha256:image-id-before-authorized-promotion>"
+  backendSbomSha256: "<sha256>"
+  dependencyScanSha256: "<sha256>"
+  runtimeImageScanSha256: "<sha256>"
+  frontendArtifactSha256: "<sha256>"
+  flywayMigrationSetSha256: "<sha256>"
+
+ci:
+  consecutiveSuccessfulRuns: 0
+  # Exactly three consecutive entries are required. Every entry must identify
+  # the same source.frontendCommit/source.backendCommit and immutable artifacts.
+  sameShaRuns:
+    - sequence: 1
+      completedAtUtc: ""
+      frontendRunUrl: ""
+      backendRunUrl: ""
+      integrationRunUrl: ""
+      frontendCommit: "<40-char-sha>"
+      backendCommit: "<40-char-sha>"
+      candidateArtifactSetSha256: "<must-equal-artifacts.candidateArtifactSetSha256>"
+      frontendSuiteResultSha256: "<sha256>"
+      backendSuiteResultSha256: "<sha256>"
+      integrationSuiteResultSha256: "<sha256>"
+      result: "PENDING" # PENDING | PASSED | FAILED
+    - sequence: 2
+      completedAtUtc: ""
+      frontendRunUrl: ""
+      backendRunUrl: ""
+      integrationRunUrl: ""
+      frontendCommit: "<40-char-sha>"
+      backendCommit: "<40-char-sha>"
+      candidateArtifactSetSha256: "<must-equal-artifacts.candidateArtifactSetSha256>"
+      frontendSuiteResultSha256: "<sha256>"
+      backendSuiteResultSha256: "<sha256>"
+      integrationSuiteResultSha256: "<sha256>"
+      result: "PENDING"
+    - sequence: 3
+      completedAtUtc: ""
+      frontendRunUrl: ""
+      backendRunUrl: ""
+      integrationRunUrl: ""
+      frontendCommit: "<40-char-sha>"
+      backendCommit: "<40-char-sha>"
+      candidateArtifactSetSha256: "<must-equal-artifacts.candidateArtifactSetSha256>"
+      frontendSuiteResultSha256: "<sha256>"
+      backendSuiteResultSha256: "<sha256>"
+      integrationSuiteResultSha256: "<sha256>"
+      result: "PENDING"
+  frontendUnitTestCount: 0
+  frontendPlaywrightTestCount: 0
+  integrationTestCount: 0 # at least 22 executed and non-skipped
+  unitTestCount: 0
+  dependencyHighVulnerabilities: null
+  dependencyCriticalVulnerabilities: null
+  imageHighVulnerabilities: null
+  imageCriticalVulnerabilities: null
+  frontendChecks:
+    lint: "PENDING"
+    typecheck: "PENDING"
+    unit: "PENDING"
+    productionBuild: "PENDING"
+    dependencyAudit: "PENDING"
+    playwright: "PENDING"
+  backendChecks:
+    unit: "PENDING"
+    integration: "PENDING"
+    legacyMigration: "PENDING"
+    bootJar: "PENDING"
+    containerBuild: "PENDING"
+    dependencyScan: "PENDING"
+    containerScan: "PENDING"
+
+repositoryControls:
+  frontendMainRulesetEvidenceSha256: "<sha256>"
+  backendMainRulesetEvidenceSha256: "<sha256>"
+  requiredApprovalCount: 1
+  directPushBlocked: null
+  administratorBypassDisabled: null
+  vercelProductionAutoDeployDisabledEvidenceSha256: "<sha256>"
+  railwayProductionAutoDeployDisabledEvidenceSha256: "<sha256>"
+  verifiedBy: ""
+  verifiedAtUtc: ""
+
+databaseEvidence:
+  productionReadonlyAuditSha256: "<sha256>"
+  productionReadonlyEvidenceRootSealSha256: "<sha256>"
+  # Hashes of the actual provider-native normalized receipts (including distinct
+  # operation IDs and ordered restoreStartedAtUtc/restoreCompletedAtUtc).
+  providerExactRestoreReceiptSha256: "<sha256>"
+  providerSanitizedRestoreReceiptSha256: "<sha256>"
+  providerRestoreBindingSha256: "<sha256>"
+  providerRestoreBindingEvidenceRootSealSha256: "<sha256>"
+  exactPreMaskOriginFingerprintSha256: "<sha256>"
+  sanitizedPreMaskOriginFingerprintSha256: "<must-equal-exactPreMaskOriginFingerprintSha256>"
+  providerRestoreReceiptsMatched: null
+  preMaskOriginFingerprintMatched: null
+  productionReadonlyRolePrivilegesApproved: null
+  productionReadonlySecurityDefinerPathCount: null # must be 0
+  productionReadonlyDangerousPredefinedRoleCount: null # must be 0
+  productionReadonlyTempPrivilegeCount: null # must be 0
+  productionPublicRlsEnabledTableCount: null # must be 0
+  productionPublicRlsPolicyCount: null # must be 0
+  productionDemoAccountCandidateCount: null # must be 0; aggregate evidence only
+  sourceSnapshotId: "<provider-id-kept-in-restricted-record>"
+  # Value digest of sourceSnapshotId. It must match the hash repeated in both
+  # exact/sanitized EVIDENCE-SEAL files; it is not a standalone evidence-file hash.
+  sourceSnapshotIdSha256: "<sha256>"
+  exactCloneSourceSnapshotMatched: null
+  sanitizedCloneSourceSnapshotMatched: null
+  exactAndSanitizedSourceSnapshotMatched: null
+  publicSchemaAllowlistSha256: "<sha256>"
+  legacyPublicSchemaUnknownEntryCount: null # must be 0
+  latestPublicSchemaUnknownEntryCount: null # must be 0
+  latestPublicSchemaMissingEntryCount: null # must be 0
+  sentinelReleaseId: "<must-equal-top-level-releaseId>"
+  sourceFlywayHistoryAbsentEvidenceSha256: "<sha256>"
+  strengthenedV3UnappliedPreconditionApproved: null
+  exactCloneEvidenceSha256: "<sha256>"
+  exactCloneEvidenceRootSealSha256: "<sha256>"
+  guardedMigrationRunSha256: "<sha256>"
+  exactNewLegacyCompatibilitySha256: "<sha256>"
+  # SHA-256 of the exact-clone compatibility root's http-contract-comparison.tsv.
+  exactCompatibilityHttpContractSha256: "<sha256>"
+  # Dedicated role has SELECT + database TEMP for pg_temp auth shadows, but zero
+  # persistent relation/column DML, schema CREATE, sequence write, or SET ROLE path.
+  exactCompatibilityReadOnlyRoleApproved: null
+  legacyBackendJarSha256: "<sha256>"
+  directBootGuardBeforeFlywayEvidenceSha256: "<sha256>"
+  sanitizedCloneEvidenceSha256: "<sha256>"
+  # SHA-256 of the immutable sanitized-migration root's EVIDENCE-SEAL file.
+  # This exact lowercase value must also be stored in the live sentinel and
+  # configured as CLONE_EVIDENCE_SEAL_SHA256 on the staging backend.
+  sanitizedCloneEvidenceRootSealSha256: "<sha256>"
+  sanitizedE2eBeforeEvidenceRootSealSha256: "<sha256>"
+  sanitizedE2eAfterEvidenceRootSealSha256: "<sha256>"
+  sanitizedE2eAfterParentChainSha256: "<sha256>"
+  # Strict release/source/before-seal-bound before/after fingerprint MATCHED report.
+  sanitizedE2eComparisonSha256: "<sha256>"
+  sanitizedSyntheticProvenanceSha256: "<sha256>"
+  sanitizedRelationshipInvariantSha256: "<sha256>"
+  restoreEvidenceSha256: "<sha256>"
+  baselineVersion: "1"
+  baselineOnMigrateDisabledAfterRun: null
+  flywayValidateRuns: 0
+  latestFlywayVersion: "<version>"
+  failedFlywayMigrations: null
+  hibernateValidateRuns: 0
+  restoreRtoMinutes: null
+  restoreApproved: null
+  containsPiiOrSecrets: null
+
+featureGates:
+  payments: false
+  instagram: false
+  uploads: false
+  scheduling: false
+  emailDeliveryMode: "disabled"
+
+authenticationCutover:
+  forcedReloginAcknowledged: null
+  legacyJwtRejectedEvidenceSha256: "<sha256>"
+  passwordResetRevocationEvidenceSha256: "<sha256>"
+  rollbackSessionInvalidationPlanApproved: null
+
+stagingEvidence:
+  sanitizedTargetGuardReleaseId: "<must-equal-top-level-releaseId>"
+  mutationRuntimeSafetyContractSha256: "<sha256>"
+  mutationRuntimeSafetyContract:
+    cloneKind: "sanitized"
+    sentinelReleaseId: "<must-equal-top-level-releaseId>"
+    sentinelCompleted: true
+    evidenceSealMatched: true
+    # sha256(databaseEvidence.sanitizedCloneEvidenceRootSealSha256 as lowercase text)
+    evidenceSealFingerprint: "<sha256>"
+    e2eBeforeEvidenceSealMatched: true
+    # sha256(databaseEvidence.sanitizedE2eBeforeEvidenceRootSealSha256 as lowercase text)
+    e2eBeforeEvidenceSealFingerprint: "<sha256>"
+    accountProvisioningEnabled: false
+    e2eMutationEnabled: true
+    emailDeliveryMode: "disabled"
+    globalSchedulingEnabled: false
+    outboxDispatchEnabled: false
+    paymentsEnabled: false
+    instagramEnabled: false
+    uploadsEnabled: false
+  roleE2eRunUrl: ""
+  roleE2eResultSha256: "<sha256>"
+  legalVersionContractResultSha256: "<sha256>"
+  accessibilityResultSha256: "<sha256>"
+  securityResultSha256: "<sha256>"
+  loadResultSha256: "<sha256>"
+  syntheticWindowEvidenceSha256: "<sha256>"
+  syntheticWindowHours: 0
+  syntheticSuccessPercent: null
+  unhandledSentryErrors: null
+  performanceVirtualUsers: 0
+  performanceRequestsPerSecond: 0
+  performanceP95Milliseconds: null
+  performanceErrorPercent: null
+  sentryScrubbingEvidenceSha256: "<sha256>"
+  requestIdCorrelationEvidenceSha256: "<sha256>"
+
+emailEvidence:
+  mode: "disabled" # disabled for role E2E; allowlist for the separate Resend window
+  senderDomainVerified: null
+  allowlistApproved: null
+  providerMessageIdsEvidenceSha256: "<sha256>"
+  retryDeadLetterEvidenceSha256: "<sha256>"
+  bounceSuppressionEvidenceSha256: "<sha256>"
+
+externalGates:
+  objectStorage:
+    status: "DISABLED" # DISABLED | APPROVED
+    disabledReason: "Provider and an isolated staging bucket are not approved"
+    provider: "" # aws-s3 | cloudflare-r2; blank keeps uploads disabled
+    stagingBucket: ""
+    isolatedFromProduction: false
+    iamCorsEncryptionVersioningLifecycleEvidenceSha256: ""
+    contractEvidenceSha256: ""
+  metaInstagram:
+    status: "DISABLED" # DISABLED | APPROVED
+    disabledReason: "Advanced Access and non-owned Professional-account E2E are not approved"
+    businessPortfolioReady: false
+    multipleAdminsAnd2fa: false
+    appReviewApproved: false
+    advancedAccessApproved: false
+    nonOwnedProfessionalAccountE2eSha256: ""
+  legal:
+    businessInformationFinal: null
+    privacyOfficerFinal: null
+    documentVersionsApproved: null
+    approvalEvidenceSha256: "<sha256>"
+
+stagingAdminAccount:
+  publicAdminSignupExists: false
+  approvedOneShotBootstrap: null
+  bootstrapApprovalEvidenceSha256: "<sha256>"
+  createdAccountIdFingerprint: "<non-reversible-fingerprint>"
+  bootstrapDisabledEvidenceSha256: "<sha256>"
+  bootstrapSecretRotatedEvidenceSha256: "<sha256>"
+  normalRuntimeSafetyContractShowsDisabled: null
+
+approvals:
+  engineering: { approver: "", approvedAtUtc: "" }
+  security: { approver: "", approvedAtUtc: "" }
+  database: { approver: "", approvedAtUtc: "" }
+  legal: { approver: "", approvedAtUtc: "" }
+  releaseOwner: { approver: "", approvedAtUtc: "" }
+
+# Every P1 item must include an owner, due date and explicit acceptance. P0 items
+# are never accepted in a qualified candidate. Example item shape:
+# - id: "RC-P1-001"
+#   severity: "P1"
+#   summary: ""
+#   owner: ""
+#   dueAtUtc: "YYYY-MM-DDTHH:MM:SSZ"
+#   acceptance: ""
+#   acceptedBy: ""
+#   acceptedAtUtc: "YYYY-MM-DDTHH:MM:SSZ"
+#   status: "OPEN" # OPEN | ACCEPTED | CLOSED
+# The former first-row verification/reset/outbox races are closed in code by
+# the domain-separated PostgreSQL transaction advisory lock. Qualification requires
+# primitive release probes and real Spring/JPA service concurrency tests that observe
+# database-side advisory waiting and assert the final row/outbox cardinality.
+# Add only risks that are actually open for this candidate.
+openRisks: []
+rollback:
+  runbookVersion: "<immutable-document-version>"
+  runbookSha256: "<sha256>"
+  approvedBy: ""
+  approvedAtUtc: ""

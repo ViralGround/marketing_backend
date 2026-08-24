@@ -32,6 +32,7 @@ import com.viralground.backend.validation.PublicUrlPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -54,6 +55,12 @@ public class CompanyService {
     private final FileStorage fileStorage;
     private final UploadOwnershipService uploadOwnershipService;
     private final CompanyProfileRepository companyProfileRepository;
+
+    @Value("${features.uploads.enabled:false}")
+    private boolean uploadsFeatureEnabled = false;
+
+    @Value("${features.payments.enabled:false}")
+    private boolean paymentsFeatureEnabled = false;
 
     private String resolveThumbUrl(Campaign c) {
         if (c.getThumbnailFileKey() != null && !c.getThumbnailFileKey().isBlank()) {
@@ -95,6 +102,7 @@ public class CompanyService {
                 ? null : PublicUrlPolicy.normalizeOptional(req.getHomepage());
         if (req.getLogoFileKey() != null) {
             if (!req.getLogoFileKey().isBlank()) {
+                requireUploadsEnabled();
                 uploadOwnershipService.requireOwnedUpload(req.getLogoFileKey(), memberId);
                 if (!fileStorage.exists(req.getLogoFileKey())) {
                     throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
@@ -121,6 +129,7 @@ public class CompanyService {
             thumbnailFileKey = null;
         }
         if (thumbnailFileKey != null) {
+            requireUploadsEnabled();
             uploadOwnershipService.requireOwnedUpload(thumbnailFileKey, companyMemberId);
             if (!fileStorage.exists(thumbnailFileKey)) {
                 throw new AppException(ErrorCode.SUBMISSION_NOT_FOUND);
@@ -138,7 +147,9 @@ public class CompanyService {
                 .requirements(req.getRequirements())
                 .deadline(req.getDeadline())
                 .status(CampaignStatus.DRAFT)
-                .escrowStatus(EscrowStatus.PENDING_DEPOSIT)
+                .escrowStatus(paymentsFeatureEnabled
+                        ? EscrowStatus.PENDING_DEPOSIT
+                        : EscrowStatus.NONE)
                 .createdById(companyMemberId)
                 .build());
 
@@ -203,7 +214,7 @@ public class CompanyService {
                             historyByAppId.getOrDefault(a.getId(), List.of());
                     return new CompanyCampaignResponse.ApplicationItem(
                             a.getId(),
-                            a.getStatus(),
+                            a.getApiStatus(),
                             a.getMessage(),
                             a.getSubmissionUrl(),
                             resolveVideoUrl(a.getVideoFileKey()),
@@ -245,6 +256,7 @@ public class CompanyService {
     @Transactional
     public CompanyCampaignResponse updateCampaign(Integer campaignId, Integer companyMemberId, CompanyCampaignUpdateRequest req) {
         Campaign c = loadOwned(campaignId, companyMemberId);
+        requireNonFinancialCampaignWhenPaymentsDisabled(c);
 
         if (c.getStatus() == CampaignStatus.CLOSED) {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
@@ -252,6 +264,7 @@ public class CompanyService {
 
         if (req.getThumbnailFileKey() != null) {
             if (!req.getThumbnailFileKey().isBlank()) {
+                requireUploadsEnabled();
                 uploadOwnershipService.requireOwnedUpload(
                         req.getThumbnailFileKey(), companyMemberId);
                 if (!fileStorage.exists(req.getThumbnailFileKey())) {
@@ -265,7 +278,7 @@ public class CompanyService {
         Integer maxParticipants = c.getMaxParticipants();
         Integer totalBudget = null;
         if (budgetFieldsIncluded) {
-            if (c.getEscrowStatus() != EscrowStatus.PENDING_DEPOSIT) {
+            if (!isBudgetEditable(c)) {
                 throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
             }
             rewardAmount = req.getRewardAmount() != null
@@ -295,10 +308,15 @@ public class CompanyService {
                 resolveThumbUrl(saved));
     }
 
+    private void requireUploadsEnabled() {
+        if (!uploadsFeatureEnabled) throw new AppException(ErrorCode.UPLOAD_FEATURE_DISABLED);
+    }
+
     @Transactional
     public void deleteCampaign(Integer campaignId, Integer companyMemberId) {
         Campaign c = loadOwned(campaignId, companyMemberId);
-        if (c.getEscrowStatus() != EscrowStatus.PENDING_DEPOSIT) {
+        requireNonFinancialCampaignWhenPaymentsDisabled(c);
+        if (c.getStatus() != CampaignStatus.DRAFT || !isPreFinancial(c)) {
             throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
         }
         if (applicationRepository.countByCampaignId(campaignId) > 0) {
@@ -310,11 +328,13 @@ public class CompanyService {
     @Transactional
     public void cancelCampaign(Integer campaignId, Integer companyMemberId) {
         Campaign c = loadOwned(campaignId, companyMemberId);
+        requireNonFinancialCampaignWhenPaymentsDisabled(c);
         if (applicationRepository.countByCampaignId(campaignId) > 0) {
             throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
         }
         EscrowStatus es = c.getEscrowStatus();
-        if (es != EscrowStatus.PENDING_DEPOSIT && es != EscrowStatus.DEPOSIT_CONFIRMING && es != EscrowStatus.FUNDED) {
+        if (es != EscrowStatus.NONE && es != EscrowStatus.PENDING_DEPOSIT
+                && es != EscrowStatus.DEPOSIT_CONFIRMING && es != EscrowStatus.FUNDED) {
             throw new AppException(ErrorCode.INVALID_ESCROW_STATE);
         }
 
@@ -322,7 +342,7 @@ public class CompanyService {
             escrowService.refund(
                     campaignId, PaymentActor.company(companyMemberId), "기업 캠페인 취소 환불",
                     "refund:campaign:" + campaignId);
-        } else {
+        } else if (es != EscrowStatus.NONE) {
             c.setEscrowStatus(EscrowStatus.REFUNDED);
             c.setRefundedAt(LocalDateTime.now());
         }
@@ -340,6 +360,7 @@ public class CompanyService {
         if (!campaign.getCreatedById().equals(companyMemberId)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
+        requireNonFinancialCampaignWhenPaymentsDisabled(campaign);
 
         switch (req.getAction()) {
             case APPROVE -> {
@@ -359,7 +380,11 @@ public class CompanyService {
                 publishApplicationResult(app, campaign, "REJECTED", null, null);
             }
             case APPROVE_VIDEO -> {
-                if (app.getStatus() != ApplicationStatus.SUBMITTED) {
+                if (!paymentsFeatureEnabled) {
+                    throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+                }
+                if (app.getStatus() != ApplicationStatus.SUBMITTED
+                        || app.getContentApprovedAt() != null) {
                     throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
                 }
                 int payout = req.getRewardPaidAmount() != null
@@ -379,6 +404,27 @@ public class CompanyService {
                 markLatestSubmission(app.getId(), companyMemberId,
                         SubmissionReviewStatus.APPROVED, null);
                 publishApplicationResult(app, campaign, "SETTLED", payout, null);
+            }
+            case APPROVE_CONTENT -> {
+                if (paymentsFeatureEnabled) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                if (campaign.getEscrowStatus() != EscrowStatus.NONE
+                        || app.getStatus() != ApplicationStatus.SUBMITTED
+                        || app.getContentApprovedAt() != null) {
+                    throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+                }
+                // Persist the old-backend terminal enum so rollback cannot
+                // re-process this content. The marker makes the new API expose
+                // COMPLETED without implying a payment settlement.
+                app.setStatus(ApplicationStatus.SETTLED);
+                app.setContentApprovedAt(LocalDateTime.now());
+                app.setRewardPaidAmount(null);
+                app.setSettledAt(null);
+                app.setReviewedAt(LocalDateTime.now());
+                markLatestSubmission(app.getId(), companyMemberId,
+                        SubmissionReviewStatus.APPROVED, null);
+                publishApplicationResult(app, campaign, "COMPLETED", null, null);
             }
             case REQUEST_CHANGES -> {
                 if (app.getStatus() != ApplicationStatus.SUBMITTED) {
@@ -409,6 +455,39 @@ public class CompanyService {
         }
 
         applicationRepository.save(app);
+    }
+
+    /** Publish a draft in managed beta without creating or mutating payment records. */
+    @Transactional
+    public void publishManagedBetaCampaign(Integer campaignId, Integer companyMemberId) {
+        if (paymentsFeatureEnabled) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+        Campaign campaign = loadOwned(campaignId, companyMemberId);
+        if (campaign.getStatus() != CampaignStatus.DRAFT
+                || campaign.getEscrowStatus() != EscrowStatus.NONE) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+        if (campaign.getDeadline() != null && !campaign.getDeadline().isAfter(LocalDateTime.now())) {
+            throw new AppException(ErrorCode.INVALID_CAMPAIGN_INPUT);
+        }
+        campaign.setStatus(CampaignStatus.OPEN);
+        campaignRepository.save(campaign);
+    }
+
+    private boolean isPreFinancial(Campaign campaign) {
+        return campaign.getEscrowStatus() == EscrowStatus.PENDING_DEPOSIT
+                || (!paymentsFeatureEnabled && campaign.getEscrowStatus() == EscrowStatus.NONE);
+    }
+
+    private boolean isBudgetEditable(Campaign campaign) {
+        return campaign.getStatus() == CampaignStatus.DRAFT && isPreFinancial(campaign);
+    }
+
+    private void requireNonFinancialCampaignWhenPaymentsDisabled(Campaign campaign) {
+        if (!paymentsFeatureEnabled && campaign.getEscrowStatus() != EscrowStatus.NONE) {
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+        }
     }
 
     private void markLatestSubmission(Integer applicationId, Integer reviewerId,

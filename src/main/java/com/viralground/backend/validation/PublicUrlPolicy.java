@@ -42,11 +42,23 @@ public final class PublicUrlPolicy {
                 || !"https".equals(uri.getScheme())
                 || host == null
                 || uri.getRawUserInfo() != null
+                || uri.getRawFragment() != null
                 || uri.getPort() < -1
                 || uri.getPort() > 65_535
                 || !isPublicHost(host)) {
             throw invalid();
         }
+        return normalized;
+    }
+
+    /**
+     * 사용자 제출물처럼 반드시 존재해야 하는 공개 URL. 선택형 홈페이지와 달리 앞뒤
+     * 공백도 입력 오류로 거부해 서명·중복 판단과 브라우저 노출값을 하나로 유지한다.
+     */
+    public static String normalizeRequired(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank() || !rawUrl.equals(rawUrl.trim())) throw invalid();
+        String normalized = normalizeOptional(rawUrl);
+        if (normalized == null) throw invalid();
         return normalized;
     }
 

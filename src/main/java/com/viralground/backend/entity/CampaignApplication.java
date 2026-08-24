@@ -67,6 +67,14 @@ public class CampaignApplication {
     @Column(name = "settled_at")
     private LocalDateTime settledAt;
 
+    /**
+     * Nonfinancial managed-beta completion marker. The persisted status is the
+     * old-backend terminal SETTLED enum so rollback cannot re-process content;
+     * the new API presents this marker as COMPLETED without implying payment.
+     */
+    @Column(name = "content_approved_at")
+    private LocalDateTime contentApprovedAt;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -87,5 +95,13 @@ public class CampaignApplication {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+
+    public boolean isCompletedWork() {
+        return status == ApplicationStatus.SETTLED || contentApprovedAt != null;
+    }
+
+    public String getApiStatus() {
+        return contentApprovedAt != null ? "COMPLETED" : status.name();
     }
 }

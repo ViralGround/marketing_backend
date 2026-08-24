@@ -4,10 +4,12 @@ import com.viralground.backend.entity.EscrowTransaction;
 import com.viralground.backend.entity.EscrowTxType;
 import com.viralground.backend.repository.EscrowTransactionRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,6 +23,11 @@ class PaymentReconciliationServiceTest {
     @Mock EscrowTransactionRepository repository;
     @Mock PaymentGateway gateway;
     @InjectMocks PaymentReconciliationService service;
+
+    @BeforeEach
+    void enablePayments() {
+        ReflectionTestUtils.setField(service, "paymentsFeatureEnabled", true);
+    }
 
     @Test
     void reportsRemoteAmountMismatchAndUnknownTransaction() {

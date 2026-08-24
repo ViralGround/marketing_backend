@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Offline CI fixture only. It exposes one unclassified restored-schema entry and
+# rejects any attempt to continue into the sanitizer transaction.
+sql="$(cat)"
+mode="${PUBLIC_SCHEMA_FIXTURE_MODE:-unknown_column}"
+case "$mode" in
+  foreign_relation|nonpublic_schema|unexpected_trigger|unexpected_routine|\
+  tampered_routine|nonpublic_trigger_routine)
+    schema_mode=members_only
+    ;;
+  *) schema_mode="$mode" ;;
+esac
+
+if grep -Fq "missing-or-expired-sentinel" <<<"${sql}"; then
+  printf 'ok\n'
+elif grep -Fq "SELECT relation.relname, relation.relkind" <<<"${sql}"; then
+  case "$schema_mode" in
+    unknown_column) printf 'members\tr\n' ;;
+    unknown_table) printf 'legacy_sessions\tr\nmembers\tr\n' ;;
+    zero_column_table) printf 'legacy_empty\tr\nmembers\tr\n' ;;
+    members_only)
+      if [[ "$mode" == foreign_relation ]]; then printf 'members\tf\n'; else printf 'members\tr\n'; fi
+      ;;
+    *) exit 97 ;;
+  esac
+elif grep -Fq "SELECT relation.relname" <<<"${sql}" \
+    && ! grep -Fq "JOIN pg_attribute attribute" <<<"${sql}"; then
+  case "$schema_mode" in
+    unknown_column) printf 'members\n' ;;
+    unknown_table) printf 'legacy_sessions\nmembers\n' ;;
+    zero_column_table) printf 'legacy_empty\nmembers\n' ;;
+    members_only) printf 'members\n' ;;
+    *) exit 97 ;;
+  esac
+elif grep -Fq "JOIN pg_attribute attribute" <<<"${sql}"; then
+  case "$schema_mode" in
+    unknown_column)
+      printf 'members\tid\n'
+      printf 'members\tlegacy_phone\n'
+      ;;
+    unknown_table)
+      printf 'legacy_sessions\ttoken\n'
+      printf 'members\tid\n'
+      ;;
+    zero_column_table)
+      printf 'members\tid\n'
+      ;;
+    members_only) printf 'members\tid\n' ;;
+    *) exit 97 ;;
+  esac
+elif grep -Fq "database object safety" <<<"${sql}" \
+    || grep -Fq "unexpected_non_system_schema" <<<"${sql}"; then
+  foreign_relation_count=0
+  schema_count=0
+  trigger_count=0
+  routine_count=0
+  [[ "$mode" == foreign_relation ]] && foreign_relation_count=1
+  [[ "$mode" == nonpublic_schema ]] && schema_count=1
+  [[ "$mode" == unexpected_trigger ]] && trigger_count=1
+  [[ "$mode" == unexpected_routine ]] && routine_count=1
+  [[ "$mode" == tampered_routine ]] && routine_count=1
+  [[ "$mode" == nonpublic_trigger_routine ]] && trigger_count=1
+  printf '%s\n' \
+    $'foreign_data_wrapper\t0' \
+    $'foreign_server\t0' \
+    $'foreign_user_mapping\t0' \
+    $'missing_latest_user_routine\t0' \
+    $'missing_or_disabled_latest_user_trigger\t0' \
+    $'nonlocal_public_application_relation\t'"${foreign_relation_count}" \
+    $'unexpected_non_system_schema\t'"${schema_count}" \
+    $'unexpected_public_user_routine\t'"${routine_count}" \
+    $'unexpected_public_user_trigger\t'"${trigger_count}"
+elif grep -Fq "BEGIN;" <<<"${sql}"; then
+  printf 'sanitizer mutation was reached after an unknown schema entry\n' >&2
+  exit 95
+else
+  printf 'unexpected public schema fixture query\n' >&2
+  exit 98
+fi

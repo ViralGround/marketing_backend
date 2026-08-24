@@ -1,5 +1,6 @@
 package com.viralground.backend.service;
 
+import com.viralground.backend.config.PreproductionScheduledMutationGuard;
 import com.viralground.backend.entity.CampaignApplication;
 import com.viralground.backend.entity.ConnectionStatus;
 import com.viralground.backend.entity.CreatorInstagramConnection;
@@ -12,6 +13,7 @@ import com.viralground.backend.repository.CreatorInstagramConnectionRepository;
 import com.viralground.backend.repository.ReelMetricSnapshotRepository;
 import com.viralground.backend.service.ReelMetricSyncService.SyncResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.data.domain.Pageable;
@@ -41,16 +43,29 @@ class ReelMetricSyncServiceTest {
             mock(ReelMetricSnapshotRepository.class);
     private final InstagramConnectionProvider connectionProvider =
             mock(InstagramConnectionProvider.class);
+    private final InstagramMetricPersistenceCoordinator persistenceCoordinator =
+            new InstagramMetricPersistenceCoordinator(connectionRepository, snapshotRepository);
 
     private final LocalDateTime fixedNow = LocalDateTime.of(2026, 6, 10, 0, 0);
     private final Clock clock = Clock.fixed(
             fixedNow.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
     private final ReelMetricSyncService service = new ReelMetricSyncService(
-            connectionRepository, applicationRepository, snapshotRepository, connectionProvider, clock);
+            connectionRepository, applicationRepository, connectionProvider,
+            persistenceCoordinator, clock, mock(PreproductionScheduledMutationGuard.class));
 
     {
         ReflectionTestUtils.setField(service, "maxItemsPerRun", 200);
+        ReflectionTestUtils.setField(service, "instagramFeatureEnabled", true);
+    }
+
+    @BeforeEach
+    void connectedConditionalUpdatesSucceedByDefault() {
+        when(connectionRepository.markSyncSucceededIfConnected(
+                any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+        when(connectionRepository.markSyncFailedIfConnected(
+                any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
     }
 
     private CreatorInstagramConnection connection(int creatorId) {
@@ -107,7 +122,9 @@ class ReelMetricSyncServiceTest {
 
         // then
         assertThat(conn.getLastSyncedAt()).isEqualTo(fixedNow);
-        verify(connectionRepository).save(conn);
+        verify(connectionRepository).markSyncSucceededIfConnected(
+                eq(conn.getId()), eq(ConnectionStatus.CONNECTED), any(), any(), any(), any(),
+                eq(fixedNow), any());
     }
 
     @Test
@@ -200,5 +217,29 @@ class ReelMetricSyncServiceTest {
         // then
         verify(connectionProvider, never()).fetchReelMetrics(any(), any());
         assertThat(result.synced()).isZero();
+    }
+
+    @Test
+    void concurrentDisconnectPreventsStaleMergeAndStopsLaterTokenUse() {
+        CreatorInstagramConnection conn = connection(1);
+        conn.setEncryptedAccessToken("stale-encrypted-token");
+        when(connectionRepository.findByStatus(ConnectionStatus.CONNECTED))
+                .thenReturn(List.of(conn));
+        when(applicationRepository.findBySubmissionUrlIsNotNull(any(Pageable.class)))
+                .thenReturn(List.of(
+                        app(100, 1, "https://insta/reel/first/"),
+                        app(101, 1, "https://insta/reel/second/")));
+        when(connectionProvider.fetchReelMetrics(any(), eq("https://insta/reel/first/")))
+                .thenReturn(new ReelMetrics(10, 1, 0, 0, List.of()));
+        when(connectionRepository.markSyncSucceededIfConnected(
+                any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
+
+        service.syncAll();
+
+        verify(connectionRepository, never()).save(any());
+        verify(snapshotRepository, never()).save(any());
+        verify(connectionProvider, never()).fetchReelMetrics(
+                any(), eq("https://insta/reel/second/"));
+        assertThat(conn.getStatus()).isEqualTo(ConnectionStatus.DISCONNECTED);
     }
 }
